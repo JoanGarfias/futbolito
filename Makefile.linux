@@ -1,0 +1,25 @@
+CC = gcc
+
+CFLAGS = -Wall -Wextra
+
+SDLFLAGS = $(shell sdl2-config --cflags --libs) -lSDL2_ttf
+
+SRC = src/main.c \
+src/game.c \
+src/player.c \
+src/input.c \
+src/ball.c \
+src/physics.c \
+src/render.c \
+src/network.c
+
+OUT = futbolito
+
+all:
+	$(CC) $(SRC) -o $(OUT) $(CFLAGS) $(SDLFLAGS)
+
+run: all
+	./$(OUT)
+
+clean:
+	rm -f $(OUT)
