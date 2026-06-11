@@ -9,13 +9,23 @@ typedef struct
     float x;
     float y;
     int active;
-
 } PlayerPacket;
 
 typedef struct
 {
-    PlayerPacket players[MAX_PACKET_PLAYERS];
+    float x;
+    float y;
+    float vx;
+    float vy;
+    int size;
+    int lastPlayerTouched;
+} BallPacket;
 
+typedef struct
+{
+    PlayerPacket players[MAX_PACKET_PLAYERS];
+    BallPacket ball;
+    int score[MAX_PACKET_PLAYERS];
 } GamePacket;
 
 #endif

@@ -12,7 +12,6 @@ typedef struct
     float x;
     float y;
     int active;
-
 } NetworkPlayer;
 
 typedef struct
@@ -20,7 +19,6 @@ typedef struct
     int hostId;
     int localPlayerId;
     NetworkPlayer players[MAX_NETWORK_PLAYERS];
-
 } NetworkState;
 
 void initNetworkState(NetworkState *network, int localPlayerId);

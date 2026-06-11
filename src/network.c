@@ -5,15 +5,14 @@
 #include <string.h>
 
 #ifdef _WIN32
-    #include <winsock2.h>
+#include <winsock2.h>
 #else
-    #include <arpa/inet.h>
-    #include <sys/socket.h>
-    #include <unistd.h>
-
-    #define SOCKET int
-    #define INVALID_SOCKET -1
-    #define closesocket close
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#define SOCKET int
+#define INVALID_SOCKET -1
+#define closesocket close
 #endif
 
 void initNetworkState(NetworkState *network, int localPlayerId)
@@ -51,12 +50,11 @@ void printNetworkState(NetworkState *network)
 
     for (int i = 0; i < MAX_NETWORK_PLAYERS; i++)
     {
-        printf(
-            "Jugador %d | activo: %d | x: %.2f | y: %.2f\n",
-            network->players[i].id,
-            network->players[i].active,
-            network->players[i].x,
-            network->players[i].y);
+        printf("Jugador %d | activo: %d | x: %.2f | y: %.2f\n",
+               network->players[i].id,
+               network->players[i].active,
+               network->players[i].x,
+               network->players[i].y);
     }
 
     fflush(stdout);
@@ -78,10 +76,8 @@ void electNewHost(NetworkState *network)
         if (network->players[i].active)
         {
             network->hostId = network->players[i].id;
-
             printf("\n[NETWORK] Nuevo host: Jugador %d\n", network->hostId);
             fflush(stdout);
-
             return;
         }
     }
@@ -110,6 +106,7 @@ void shutdownNetworkClient()
     WSACleanup();
 #endif
 }
+
 int sendLocalPlayerAndReceiveState(GameState *game, int localPlayerId, const char *serverIp)
 {
     SOCKET sock;
@@ -140,7 +137,7 @@ int sendLocalPlayerAndReceiveState(GameState *game, int localPlayerId, const cha
     packet.playerId = localPlayerId;
     packet.x = game->players[index].x;
     packet.y = game->players[index].y;
-    packet.active = game->players[index].active;
+    packet.active = 1;
 
     send(sock, (char *)&packet, sizeof(PlayerPacket), 0);
 
@@ -153,6 +150,18 @@ int sendLocalPlayerAndReceiveState(GameState *game, int localPlayerId, const cha
             game->players[i].x = state.players[i].x;
             game->players[i].y = state.players[i].y;
             game->players[i].active = state.players[i].active;
+        }
+
+        game->ball.x = state.ball.x;
+        game->ball.y = state.ball.y;
+        game->ball.vx = state.ball.vx;
+        game->ball.vy = state.ball.vy;
+        game->ball.size = state.ball.size;
+        game->ball.lastPlayerTouched = state.ball.lastPlayerTouched;
+
+        for (int i = 0; i < MAX_PLAYERS; i++)
+        {
+            game->score[i] = state.score[i];
         }
     }
 

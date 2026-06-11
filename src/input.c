@@ -6,11 +6,16 @@
 #define FIELD_RIGHT 950
 #define FIELD_BOTTOM 550
 
-void handleInput(GameState *game)
+void handleInput(GameState *game, int localPlayerId)
 {
     const Uint8 *keys = SDL_GetKeyboardState(NULL);
 
-    Player *player = &game->players[0];
+    int index = localPlayerId - 1;
+
+    if (index < 0 || index >= MAX_PLAYERS)
+        return;
+
+    Player *player = &game->players[index];
 
     if (!player->active)
         return;

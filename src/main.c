@@ -1,10 +1,10 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "../include/game.h"
 #include "../include/input.h"
-#include "../include/physics.h"
 #include "../include/render.h"
 #include "../include/network.h"
 
@@ -13,8 +13,14 @@
 
 int main(int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
+    int localPlayerId = 1;
+    const char *serverIp = "127.0.0.1";
+
+    if (argc >= 2)
+        localPlayerId = atoi(argv[1]);
+
+    if (argc >= 3)
+        serverIp = argv[2];
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
@@ -30,7 +36,7 @@ int main(int argc, char *argv[])
     }
 
     SDL_Window *window = SDL_CreateWindow(
-        "FUTBOLITO - Version Red",
+        "FUTBOLITO - Red",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_WIDTH,
@@ -45,10 +51,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(
-        window,
-        -1,
-        SDL_RENDERER_ACCELERATED);
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
     if (renderer == NULL)
     {
@@ -64,13 +67,10 @@ int main(int argc, char *argv[])
     if (font == NULL)
     {
         printf("Error al cargar fuente: %s\n", TTF_GetError());
-
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
-
         TTF_Quit();
         SDL_Quit();
-
         return 1;
     }
 
@@ -78,20 +78,11 @@ int main(int argc, char *argv[])
     initGame(&game);
 
     NetworkState network;
-    initNetworkState(&network, 1);
+    initNetworkState(&network, localPlayerId);
 
-    printNetworkState(&network);
-
-    const char *serverIp = "127.0.0.1";
-    int localPlayerId = 1;
-
-    if (!initNetworkClient(serverIp))
-    {
-        printf("No se pudo iniciar cliente de red\n");
-    }
+    initNetworkClient(serverIp);
 
     SDL_Event event;
-
     Uint32 lastNetworkUpdate = 0;
 
     while (game.running)
@@ -99,39 +90,28 @@ int main(int argc, char *argv[])
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_QUIT)
-            {
                 game.running = 0;
-            }
 
             if (event.type == SDL_KEYDOWN)
             {
-                handleKeyDown(&game, event.key.keysym.sym);
-
-                syncNetworkFromGame(&network, &game);
-                electNewHost(&network);
+                if (event.key.keysym.sym == SDLK_ESCAPE)
+                    game.running = 0;
 
                 if (event.key.keysym.sym == SDLK_5)
                 {
+                    syncNetworkFromGame(&network, &game);
                     printNetworkState(&network);
                 }
             }
         }
 
-        handleInput(&game);
-
-        updatePhysics(&game);
-
-        syncNetworkFromGame(&network, &game);
+        handleInput(&game, localPlayerId);
 
         Uint32 now = SDL_GetTicks();
 
-        if (now - lastNetworkUpdate >= 250)
+        if (now - lastNetworkUpdate >= 50)
         {
-            sendLocalPlayerAndReceiveState(
-                &game,
-                localPlayerId,
-                serverIp);
-
+            sendLocalPlayerAndReceiveState(&game, localPlayerId, serverIp);
             lastNetworkUpdate = now;
         }
 
@@ -143,7 +123,6 @@ int main(int argc, char *argv[])
     shutdownNetworkClient();
 
     TTF_CloseFont(font);
-
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
 
