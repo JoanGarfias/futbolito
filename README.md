@@ -19,7 +19,8 @@ y otra en **Linux**.
   - Sockets: **Winsock** en Windows / **sockets BSD** en Linux.
   - Hilos: **CreateThread** en Windows / **pthread** en Linux.
   - Mutex (sección crítica): **CRITICAL_SECTION** en Windows / **pthread_mutex** en Linux.
-- **SDL2** solo para dibujar la ventana y los jugadores.
+- **SDL2** (con SDL2_ttf y SDL2_image) solo para dibujar la ventana, el texto
+  y los sprites animados de los jugadores.
 - Arquitectura **Cliente/Servidor** sobre TCP. El servidor lleva la física
   (la pelota, los goles) y le manda el estado a todos.
 - **Migración de host**: si la PC que hace de servidor se cae, otro equipo toma
@@ -42,8 +43,9 @@ mingw32-make
 ```
 Genera `build/futbolito.exe` (cliente) y `build/futbolito_server.exe` (servidor).
 
-> Necesitas SDL2 y SDL2_ttf instalados (nosotros usamos MSYS2 ucrt64). Si tu
-> SDL está en otra ruta, ajusta `SDLFLAGS` en el `Makefile`.
+> Necesitas SDL2, SDL2_ttf y SDL2_image (nosotros usamos MSYS2 ucrt64):
+> `pacman -S mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_ttf mingw-w64-ucrt-x86_64-SDL2_image`
+> Si tu SDL está en otra ruta, ajusta `SDLFLAGS` en el `Makefile`.
 
 ### Linux
 ```
@@ -51,7 +53,7 @@ make -f Makefile.linux
 ```
 Genera `futbolito` y `futbolito_server`.
 
-> Instala SDL2: `sudo apt install libsdl2-dev libsdl2-ttf-dev`
+> Instala SDL2: `sudo apt install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev`
 
 ## Cómo jugar
 

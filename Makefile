@@ -2,7 +2,7 @@ CC = gcc
 
 CFLAGS = -Wall -Wextra
 
-SDLFLAGS = -IC:/msys64/ucrt64/include/SDL2 -LC:/msys64/ucrt64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf
+SDLFLAGS = -IC:/msys64/ucrt64/include/SDL2 -LC:/msys64/ucrt64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -lSDL2_image
 NETFLAGS = -lws2_32
 
 # Cliente: GUI con SDL + sockets nativos (Winsock) + hilos (CreateThread).

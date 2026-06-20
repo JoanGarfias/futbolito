@@ -2,7 +2,7 @@ CC = gcc
 
 CFLAGS = -Wall -Wextra
 
-SDLFLAGS = $(shell sdl2-config --cflags --libs) -lSDL2_ttf
+SDLFLAGS = $(shell sdl2-config --cflags --libs) -lSDL2_ttf -lSDL2_image -lm
 NETFLAGS = -lpthread
 
 # Cliente: GUI con SDL + sockets nativos (BSD) + hilos (pthread).

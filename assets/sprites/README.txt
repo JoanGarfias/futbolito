@@ -1,26 +1,28 @@
 SPRITES DEL FUTBOLITO
 =====================
 
-Coloca aqui los sprites en formato BMP con estos nombres EXACTOS:
+El juego usa animaciones en PNG (con transparencia) exportadas de Aseprite.
+Cada archivo es una TIRA HORIZONTAL de frames de 24x24 px:
 
-    player1.bmp   -> jugador 1 (izquierda, azul)
-    player2.bmp   -> jugador 2 (derecha, rojo)
-    player3.bmp   -> jugador 3 (arriba, amarillo)
-    player4.bmp   -> jugador 4 (abajo, verde)
-    ball.bmp      -> pelota
+    idle_down.png    idle_up.png    idle_side.png    (personaje quieto)
+    walk_down.png    walk_up.png    walk_side.png    (personaje caminando)
 
-Reglas:
-- Formato: BMP (24 bits). El juego los carga con SDL_LoadBMP (SDL puro,
-  sin librerias extra).
-- Transparencia: usa MAGENTA puro (R=255, G=0, B=255) para las zonas que
-  quieres que sean transparentes. El motor lo trata como color transparente
-  (color key).
-- Tamano sugerido: jugadores 30x30 px, pelota 20x20 px. Si usas otro tamano,
-  la imagen se escala automaticamente al tamano del personaje en el campo.
+- El render deduce cuantos frames hay dividiendo el ancho de la imagen / 24.
+- "side" mira a la derecha; para la izquierda el juego voltea la imagen en
+  espejo automaticamente.
+- Los 4 jugadores comparten el mismo personaje y se distinguen por un TINTE de
+  color (azul, rojo, amarillo, verde). Cuando tengan sprites con la playera ya
+  pintada de cada color, basta reemplazar estos PNG y quitar el tinte en
+  src/render.c (SDL_SetTextureColorMod).
+- Si falta algun archivo, ese jugador se dibuja con un cuadro de color.
 
-Si falta algun archivo, ese elemento se dibuja con su color solido de
-respaldo, asi que el juego nunca se rompe por falta de sprites.
+Como se generaron (desde el .aseprite original), por si hay que regenerarlos:
 
-Para usar PNG con transparencia real (canal alfa) en lugar de BMP, avisame:
-hay que enlazar la libreria SDL2_image (-lSDL2_image) y cambiar SDL_LoadBMP
-por IMG_Load en src/render.c.
+    aseprite -b --tag "Walk_Down" "16x16 All Animations.aseprite" \
+        --sheet-type horizontal --sheet walk_down.png
+
+(IMPORTANTE: --tag va ANTES del archivo, si no exporta TODAS las animaciones.)
+
+Dependencia: el cliente ahora enlaza SDL2_image.
+    - MSYS2:  pacman -S mingw-w64-ucrt-x86_64-SDL2_image
+    - Linux:  sudo apt install libsdl2-image-dev
