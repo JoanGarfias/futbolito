@@ -7,6 +7,10 @@
 #define SCREEN_WIDTH 1000
 #define SCREEN_HEIGHT 600
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 /* Cada frame del sprite mide 24x24 px (exportado de Aseprite). */
 #define FRAME_W 24
 #define FRAME_H 24
@@ -193,6 +197,68 @@ static void drawPlayerSprite(SDL_Renderer *renderer, int i, SDL_Rect dst, int mo
     SDL_SetTextureColorMod(a.tex, 255, 255, 255);
 }
 
+/* ----- Funciones de ayuda para dibujar la cancha ----- */
+
+/* Contorno de circulo (algoritmo de punto medio). */
+static void drawCircleOutline(SDL_Renderer *r, int cx, int cy, int radius)
+{
+    int x = radius, y = 0, err = 0;
+    while (x >= y)
+    {
+        SDL_RenderDrawPoint(r, cx + x, cy + y);
+        SDL_RenderDrawPoint(r, cx + y, cy + x);
+        SDL_RenderDrawPoint(r, cx - y, cy + x);
+        SDL_RenderDrawPoint(r, cx - x, cy + y);
+        SDL_RenderDrawPoint(r, cx - x, cy - y);
+        SDL_RenderDrawPoint(r, cx - y, cy - x);
+        SDL_RenderDrawPoint(r, cx + y, cy - x);
+        SDL_RenderDrawPoint(r, cx + x, cy - y);
+        y++;
+        if (err <= 0)
+            err += 2 * y + 1;
+        if (err > 0)
+        {
+            x--;
+            err -= 2 * x + 1;
+        }
+    }
+}
+
+/* Circulo con grosor de 2 px. */
+static void drawCircle(SDL_Renderer *r, int cx, int cy, int radius)
+{
+    drawCircleOutline(r, cx, cy, radius);
+    drawCircleOutline(r, cx, cy, radius - 1);
+}
+
+/* Circulo relleno (para los puntos de la cancha). */
+static void fillCircle(SDL_Renderer *r, int cx, int cy, int radius)
+{
+    for (int dy = -radius; dy <= radius; dy++)
+    {
+        int dx = (int)sqrt((double)(radius * radius - dy * dy));
+        SDL_RenderDrawLine(r, cx - dx, cy + dy, cx + dx, cy + dy);
+    }
+}
+
+/* Arco entre dos angulos (radianes), con grosor de 2 px. */
+static void drawArc(SDL_Renderer *r, int cx, int cy, int radius, double a0, double a1)
+{
+    for (double a = a0; a <= a1; a += 0.008)
+    {
+        SDL_RenderDrawPoint(r, cx + (int)(radius * cos(a)), cy + (int)(radius * sin(a)));
+        SDL_RenderDrawPoint(r, cx + (int)((radius - 1) * cos(a)), cy + (int)((radius - 1) * sin(a)));
+    }
+}
+
+/* Rectangulo con grosor de 2 px. */
+static void drawRect2(SDL_Renderer *r, SDL_Rect rect)
+{
+    SDL_RenderDrawRect(r, &rect);
+    SDL_Rect inner = {rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2};
+    SDL_RenderDrawRect(r, &inner);
+}
+
 void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
 {
     /* La primera vez, fijamos las posiciones previas para no detectar un
@@ -209,19 +275,57 @@ void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
         prevInit = 1;
     }
 
-    SDL_SetRenderDrawColor(renderer, 30, 140, 60, 255);
+    // Césped con franjas verticales
+    SDL_SetRenderDrawColor(renderer, 62, 158, 68, 255);
     SDL_RenderClear(renderer);
 
+    SDL_SetRenderDrawColor(renderer, 54, 146, 60, 255);
+    for (int i = 0; i < 9; i++)
+    {
+        if (i % 2 == 1)
+        {
+            SDL_Rect stripe = {50 + i * 100, 50, 100, 500};
+            SDL_RenderFillRect(renderer, &stripe);
+        }
+    }
+
+    // Líneas blancas de la cancha
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-    // Borde del campo
-    SDL_Rect campo = {50, 50, 900, 500};
-    SDL_RenderDrawRect(renderer, &campo);
+    SDL_Rect borde = {50, 50, 900, 500};
+    drawRect2(renderer, borde);
 
     // Línea central
-    SDL_RenderDrawLine(renderer, SCREEN_WIDTH / 2, 50, SCREEN_WIDTH / 2, 550);
+    SDL_RenderDrawLine(renderer, 500, 50, 500, 550);
+    SDL_RenderDrawLine(renderer, 501, 50, 501, 550);
 
-    // Porterías activas por jugador
+    // Círculo y punto central
+    drawCircle(renderer, 500, 300, 72);
+    fillCircle(renderer, 500, 300, 4);
+
+    // Área grande, área chica, punto y arco de penal (izquierda)
+    SDL_Rect penL = {50, 170, 120, 260};
+    drawRect2(renderer, penL);
+    SDL_Rect areaChicaL = {50, 240, 45, 120};
+    drawRect2(renderer, areaChicaL);
+    fillCircle(renderer, 135, 300, 3);
+    drawArc(renderer, 135, 300, 55, -0.88, 0.88);
+
+    // Área grande, área chica, punto y arco de penal (derecha)
+    SDL_Rect penR = {830, 170, 120, 260};
+    drawRect2(renderer, penR);
+    SDL_Rect areaChicaR = {905, 240, 45, 120};
+    drawRect2(renderer, areaChicaR);
+    fillCircle(renderer, 865, 300, 3);
+    drawArc(renderer, 865, 300, 55, M_PI - 0.88, M_PI + 0.88);
+
+    // Arcos de esquina
+    drawArc(renderer, 50, 50, 14, 0.0, M_PI / 2);
+    drawArc(renderer, 950, 50, 14, M_PI / 2, M_PI);
+    drawArc(renderer, 50, 550, 14, 3.0 * M_PI / 2, 2.0 * M_PI);
+    drawArc(renderer, 950, 550, 14, M_PI, 3.0 * M_PI / 2);
+
+    // Porterías según jugadores conectados
     if (game->players[0].active)
     {
         SDL_Rect goalLeft = {30, 250, 20, 100};
@@ -245,10 +349,6 @@ void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
         SDL_Rect goalBottom = {450, 550, 100, 20};
         SDL_RenderDrawRect(renderer, &goalBottom);
     }
-
-    // Centro del campo
-    SDL_Rect centro = {SCREEN_WIDTH / 2 - 5, SCREEN_HEIGHT / 2 - 5, 10, 10};
-    SDL_RenderFillRect(renderer, &centro);
 
     // Marcador pequeño con color del jugador
     char scoreText[20];
