@@ -28,6 +28,7 @@ typedef struct
     PlayerPacket players[MAX_PACKET_PLAYERS];
     BallPacket ball;
     int score[MAX_PACKET_PLAYERS];
+    int winner; /* -1 si nadie ha ganado aun */
 } GamePacket;
 
 #endif

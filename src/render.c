@@ -307,5 +307,24 @@ void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
 
     SDL_RenderFillRect(renderer, &ballRect);
 
+    // Cartel de ganador
+    if (game->winner >= 0 && game->winner < MAX_PLAYERS)
+    {
+        SDL_Rect panel = {SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 40, 400, 80};
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 220);
+        SDL_RenderFillRect(renderer, &panel);
+
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(renderer, &panel);
+
+        char winText[40];
+        snprintf(winText, sizeof(winText), "GANA EL JUGADOR %d", game->winner + 1);
+
+        SDL_Color color = playerColor(game->winner);
+        renderText(renderer, font, winText, SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 - 25, color);
+        renderText(renderer, font, "Nueva partida en unos segundos...",
+                   SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 + 5, white);
+    }
+
     SDL_RenderPresent(renderer);
 }

@@ -104,6 +104,8 @@ static THREAD_RET receiverThread(void *arg)
         for (int i = 0; i < MAX_PLAYERS; i++)
             nc->game->score[i] = state.score[i];
 
+        nc->game->winner = state.winner;
+
         mutex_unlock(&nc->mutex); /* ---- sale de seccion critica ---- */
     }
 

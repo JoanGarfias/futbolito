@@ -1,4 +1,5 @@
 #include "../include/physics.h"
+#include <stdio.h>
 
 #define FIELD_LEFT 50
 #define FIELD_TOP 50
@@ -31,10 +32,24 @@ void registerGoal(GameState *game, int goalOwner)
     if (scorer == goalOwner)
     {
         game->score[scorer]--;
+        printf("[GOL] Autogol del Jugador %d", scorer + 1);
     }
     else
     {
         game->score[scorer]++;
+        printf("[GOL] Anota el Jugador %d", scorer + 1);
+    }
+
+    printf(" | Marcador: P1=%d P2=%d P3=%d P4=%d\n",
+           game->score[0], game->score[1], game->score[2], game->score[3]);
+    fflush(stdout);
+
+    /* Si el goleador llego a los goles necesarios, gana la partida. */
+    if (game->score[scorer] >= GOALS_TO_WIN)
+    {
+        game->winner = scorer;
+        printf("[JUEGO] El Jugador %d GANA la partida!\n", scorer + 1);
+        fflush(stdout);
     }
 
     resetBall(game);
@@ -43,6 +58,10 @@ void registerGoal(GameState *game, int goalOwner)
 void updatePhysics(GameState *game)
 {
     Ball *ball = &game->ball;
+
+    /* Si ya hay ganador, congelamos el juego (no se mueve la pelota). */
+    if (game->winner != -1)
+        return;
 
     // Colisión jugador-balón
     for (int i = 0; i < MAX_PLAYERS; i++)

@@ -69,6 +69,8 @@ static void buildSnapshot(GamePacket *out, const GameState *g)
         out->score[i] = g->score[i];
     }
 
+    out->winner = g->winner;
+
     out->ball.x = g->ball.x;
     out->ball.y = g->ball.y;
     out->ball.vx = g->ball.vx;
@@ -86,11 +88,52 @@ static THREAD_RET physicsThread(void *arg)
 {
     (void)arg;
 
+    int tick = 0;       /* para imprimir un latido cada segundo */
+    int winnerTicks = 0; /* cuenta el tiempo tras ganar, para reiniciar */
+
     while (server.running)
     {
+        int activeCount = 0;
+        float bx = 0, by = 0;
+
         mutex_lock(&server.mutex); /* ---- entra a seccion critica ---- */
+
         updatePhysics(&server.game);
+
+        if (server.game.winner != -1)
+        {
+            winnerTicks++;
+            if (winnerTicks > 180) /* ~3 segundos: nueva partida */
+            {
+                for (int i = 0; i < MAX_PLAYERS; i++)
+                    server.game.score[i] = 0;
+                server.game.winner = -1;
+                resetBall(&server.game);
+                winnerTicks = 0;
+                printf("[SERVIDOR] Marcador reiniciado, nueva partida\n");
+                fflush(stdout);
+            }
+        }
+        else
+        {
+            winnerTicks = 0;
+        }
+
+        for (int i = 0; i < MAX_PLAYERS; i++)
+            if (server.game.players[i].active)
+                activeCount++;
+        bx = server.game.ball.x;
+        by = server.game.ball.y;
+
         mutex_unlock(&server.mutex); /* ---- sale de seccion critica ---- */
+
+        tick++;
+        if (tick % 60 == 0) /* una vez por segundo */
+        {
+            printf("[HILO FISICA] seccion critica OK | pelota=(%.0f,%.0f) | jugadores activos=%d\n",
+                   bx, by, activeCount);
+            fflush(stdout);
+        }
 
         thread_sleep_ms(PHYSICS_TICK_MS);
     }
@@ -112,6 +155,7 @@ static THREAD_RET clientThread(void *arg)
     PlayerPacket packet;
     GamePacket snapshot;
     int myIndex = -1;
+    int recvCount = 0;
 
     while (server.running)
     {
@@ -129,6 +173,14 @@ static THREAD_RET clientThread(void *arg)
             continue;
 
         myIndex = index;
+
+        recvCount++;
+        if (recvCount == 1 || recvCount % 150 == 0) /* sin saturar la consola */
+        {
+            printf("[HILO CLIENTE] Jugador %d envia posicion -> entra a seccion critica\n",
+                   index + 1);
+            fflush(stdout);
+        }
 
         mutex_lock(&server.mutex); /* ---- entra a seccion critica ---- */
 
