@@ -11,16 +11,32 @@
 #define SCREEN_WIDTH 1000
 #define SCREEN_HEIGHT 600
 
+#define SEND_INTERVAL_MS 30
+
 int main(int argc, char *argv[])
 {
+    /*
+     * Uso:
+     *   futbolito <id>                        -> cliente local (127.0.0.1)
+     *   futbolito <id> <ipServidor>           -> cliente puro a un servidor fijo
+     *   futbolito <id> <ip1> <ip2> <ip3> <ip4> -> modo punto a punto (4 equipos
+     *                                             con migracion de host)
+     */
     int localPlayerId = 1;
-    const char *serverIp = "127.0.0.1";
+    const char *peers[4] = {"127.0.0.1", "127.0.0.1", "127.0.0.1", "127.0.0.1"};
+    int peerCount = 1;
 
     if (argc >= 2)
         localPlayerId = atoi(argv[1]);
 
     if (argc >= 3)
-        serverIp = argv[2];
+    {
+        peerCount = argc - 2;
+        if (peerCount > 4)
+            peerCount = 4;
+        for (int i = 0; i < peerCount; i++)
+            peers[i] = argv[2 + i];
+    }
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
@@ -74,16 +90,27 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    loadSprites(renderer);
+
     GameState game;
     initGame(&game);
 
-    NetworkState network;
-    initNetworkState(&network, localPlayerId);
+    /* Conexion persistente + hilo receptor. */
+    NetClient *net = netConnect(peers, peerCount, localPlayerId, &game);
 
-    initNetworkClient(serverIp);
+    if (net == NULL)
+    {
+        printf("No se pudo iniciar la red. Saliendo.\n");
+        TTF_CloseFont(font);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
 
     SDL_Event event;
-    Uint32 lastNetworkUpdate = 0;
+    Uint32 lastSend = 0;
 
     while (game.running)
     {
@@ -92,36 +119,49 @@ int main(int argc, char *argv[])
             if (event.type == SDL_QUIT)
                 game.running = 0;
 
-            if (event.type == SDL_KEYDOWN)
-            {
-                if (event.key.keysym.sym == SDLK_ESCAPE)
-                    game.running = 0;
-
-                if (event.key.keysym.sym == SDLK_5)
-                {
-                    syncNetworkFromGame(&network, &game);
-                    printNetworkState(&network);
-                }
-            }
+            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
+                game.running = 0;
         }
 
+        /* Input: escribe la posicion del jugador local dentro de la
+         * seccion critica (el hilo receptor toca el mismo GameState). */
+        netLockState(net);
         handleInput(&game, localPlayerId);
+        netUnlockState(net);
 
         Uint32 now = SDL_GetTicks();
-
-        if (now - lastNetworkUpdate >= 50)
+        if (now - lastSend >= SEND_INTERVAL_MS)
         {
-            sendLocalPlayerAndReceiveState(&game, localPlayerId, serverIp);
-            lastNetworkUpdate = now;
+            netSendLocalPlayer(net, &game);
+            lastSend = now;
         }
 
+        /* Render: lee el estado dentro de la seccion critica. */
+        netLockState(net);
         renderGame(renderer, font, &game);
+        netUnlockState(net);
+
+        if (!netIsConnected(net))
+        {
+            printf("[CLIENTE] Conexion perdida. Intentando migrar de host...\n");
+            if (!netReconnect(net))
+            {
+                printf("[CLIENTE] No hay ningun host disponible. Saliendo.\n");
+                game.running = 0;
+            }
+            else
+            {
+                printf("[CLIENTE] Reconectado. Host actual: jugador %d\n",
+                       netCurrentHost(net));
+            }
+        }
 
         SDL_Delay(16);
     }
 
-    shutdownNetworkClient();
+    netDisconnect(net);
 
+    freeSprites();
     TTF_CloseFont(font);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

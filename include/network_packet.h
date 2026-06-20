@@ -8,6 +8,8 @@ typedef struct
     int playerId;
     float x;
     float y;
+    float dirX;
+    float dirY;
     int active;
 } PlayerPacket;
 

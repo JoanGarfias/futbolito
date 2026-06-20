@@ -1,0 +1,13 @@
+# Binarios
+build/*.exe
+futbolito
+futbolito_server
+*.o
+*.exe
+
+# Generador del cartel
+docs/poster-build/node_modules/
+docs/poster-build/package-lock.json
+
+# Pruebas viejas compiladas
+tests/*.exe
