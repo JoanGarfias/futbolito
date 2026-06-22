@@ -21,9 +21,13 @@
  *   - netConnect(ip, isSessionHost=0, ...)  -> se conecta a esa IP; el
  *     servidor le asigna el primer id libre (2, 3, 4...).
  *
- * Si el host se cae, SOLO el equipo elegido segun el roster (el siguiente id
- * registrado tras el host caido) arranca el servidor embebido; el resto
- * unicamente reintenta connect() contra el. La reconexion corre en un hilo en
+ * Si el host se cae, SOLO el equipo elegido arranca el servidor embebido; el
+ * resto unicamente reintenta connect() contra el. El elegido es el siguiente
+ * id ACTIVO (conectado ahora mismo, no solo alguna vez registrado) en el
+ * anillo 1->2->3->4->1 a partir del host caido -- NO simplemente "host+1": si
+ * el jugador 2 nunca entro y cae el host 1, el host 1 se salta y el elegido
+ * es el jugador 3. Si no queda ningun jugador activo, la sesion termina
+ * (no hay bucle infinito de reconexion). La migracion corre en un hilo en
  * segundo plano (netBeginReconnect/netPollReconnect) para no congelar el
  * bucle SDL.
  *

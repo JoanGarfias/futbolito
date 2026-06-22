@@ -12,9 +12,10 @@
 typedef struct
 {
     char ips[MAX_PACKET_PLAYERS][64];
-    int slotUsed[MAX_PACKET_PLAYERS]; /* 1 si ese id ya fue asignado alguna vez */
-    int currentHostId;                /* id del jugador cuya maquina corre el servidor */
-    int registeredCount;              /* cuantos ids se han asignado en esta sesion */
+    int slotUsed[MAX_PACKET_PLAYERS];   /* 1 si ese id se reservo alguna vez (persiste para rejoin por IP) */
+    int slotActive[MAX_PACKET_PLAYERS]; /* 1 si ese id esta conectado AHORA MISMO (cambia en join/disconnect) */
+    int currentHostId;                  /* id del jugador cuya maquina corre el servidor */
+    int registeredCount;                /* cuantos ids se han asignado en esta sesion */
 } SessionRoster;
 
 /* ---- Handshake (un solo intercambio fijo al abrir cada conexion TCP) ---- */

@@ -73,10 +73,14 @@ tiene cada id) para la migración de host.
 - `futbolito_server` sigue existiendo como servidor dedicado fijo para pruebas
   rápidas; no requiere `--host` (ya entiende el mismo protocolo).
 
-Si el host (`--host`) se cae, el siguiente jugador registrado toma el control
-automáticamente (arranca su propio servidor embebido) y el resto se reconecta
-a él solo, sin congelar la ventana del juego (aparece un aviso
-"Reconectando..." mientras tanto).
+Si el host (`--host`) se cae, el siguiente jugador **activo en ese momento**
+toma el control automáticamente (arranca su propio servidor embebido) y el
+resto se reconecta a él solo, sin congelar la ventana del juego (aparece un
+aviso "Reconectando..." mientras tanto). La elección salta a quien no esté
+conectado: si el jugador 2 nunca llegó a entrar y se cae el host (jugador 1),
+el control pasa directo al jugador 3, no se espera al 2. Si no queda nadie
+conectado, la sesión simplemente termina (no se queda reintentando para
+siempre).
 
 ### Probar en una sola PC (varias ventanas)
 ```

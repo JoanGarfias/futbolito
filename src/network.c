@@ -203,23 +203,41 @@ static THREAD_RET receiverThread(void *arg)
 
 /*
  * Calcula, de forma deterministica, el id del siguiente host a partir del id
- * del host caido: el siguiente id REGISTRADO en el roster (wrap de 4 a 1).
- * Todos los clientes parten del mismo roster y del mismo previousHostId, asi
- * que todos llegan al mismo resultado sin coordinarse por red.
+ * del host caido: el siguiente id ACTIVO (conectado AHORA, no solo alguna vez
+ * registrado) en el anillo 1->2->3->4->1, saltando ids vacios y excluyendo
+ * siempre al host caido. Todos los clientes parten del mismo roster y del
+ * mismo fallenHostId, asi que todos llegan al mismo resultado sin
+ * coordinarse por red.
+ *
+ * Recibe el roster por puntero NO const porque marca al host caido como
+ * inactivo localmente: en una caida brusca (TCP muerto sin snapshot final)
+ * el ultimo roster recibido todavia puede traer slotActive[fallenHostId]=1,
+ * y sin esta correccion el host caido podria "auto-elegirse" de nuevo.
+ *
+ * Devuelve 0 si no queda ningun candidato (no hay sesion posible).
  */
-static int computeNextHostId(int previousHostId, const SessionRoster *roster)
+static int computeNextHostAmongActive(int fallenHostId, SessionRoster *roster)
 {
-    if (previousHostId < 1 || previousHostId > MAX_PACKET_PLAYERS)
-        previousHostId = MAX_PACKET_PLAYERS;
+    if (fallenHostId >= 1 && fallenHostId <= MAX_PACKET_PLAYERS)
+        roster->slotActive[fallenHostId - 1] = 0;
 
     for (int step = 1; step <= MAX_PACKET_PLAYERS; step++)
     {
-        int candidate = ((previousHostId - 1 + step) % MAX_PACKET_PLAYERS) + 1;
-        if (roster->slotUsed[candidate - 1])
-            return candidate;
+        int id = ((fallenHostId - 1 + step) % MAX_PACKET_PLAYERS) + 1;
+
+        if (id == fallenHostId)
+            continue;
+
+        if (!roster->slotActive[id - 1])
+            continue;
+
+        if (roster->ips[id - 1][0] == '\0')
+            continue;
+
+        return id;
     }
 
-    return 1; /* nadie registrado: no deberia pasar, pero hay que devolver algo */
+    return 0;
 }
 
 /*
@@ -403,10 +421,34 @@ static THREAD_RET reconnectWorker(void *arg)
     }
 
     mutex_lock(&nc->mutex);
-    int nextHostId = computeNextHostId(nc->roster.currentHostId, &nc->roster);
-    nc->roster.currentHostId = nextHostId;
-    int iAmHost = (nc->myId == nextHostId);
+    int fallenHostId = nc->roster.currentHostId;
+    SessionRoster migrationRoster = nc->roster; /* copia local: fija para todo este intento de migracion */
     mutex_unlock(&nc->mutex);
+
+    int nextHostId = computeNextHostAmongActive(fallenHostId, &migrationRoster);
+
+    if (nextHostId == 0)
+    {
+        printf("[MIGRACION] No queda ningun jugador activo. Sesion terminada.\n");
+        fflush(stdout);
+
+        mutex_lock(&nc->mutex);
+        nc->roster = migrationRoster;
+        nc->connected = 0;
+        nc->state = NET_STATE_DISCONNECTED;
+        nc->reconnectThreadRunning = 0;
+        mutex_unlock(&nc->mutex);
+
+        return 0;
+    }
+
+    migrationRoster.currentHostId = nextHostId;
+
+    mutex_lock(&nc->mutex);
+    nc->roster = migrationRoster;
+    mutex_unlock(&nc->mutex);
+
+    int iAmHost = (nc->myId == nextHostId);
 
     if (iAmHost)
         printf("[MIGRACION] Soy el jugador %d: paso a ser el nuevo HOST.\n", nc->myId);
@@ -422,12 +464,7 @@ static THREAD_RET reconnectWorker(void *arg)
         {
             if (!nc->hosting)
             {
-                SessionRoster snapshot;
-                mutex_lock(&nc->mutex);
-                snapshot = nc->roster;
-                mutex_unlock(&nc->mutex);
-
-                if (serverStartWithRoster(&snapshot))
+                if (serverStartWithRoster(&migrationRoster))
                 {
                     nc->hosting = 1;
                     printf("[HOST] Este equipo (jugador %d) ahora es el HOST\n", nc->myId);
@@ -444,6 +481,17 @@ static THREAD_RET reconnectWorker(void *arg)
 
             if (nc->hosting && doConnect(nc, "127.0.0.1") && doHandshake(nc))
             {
+                mutex_lock(&nc->mutex);
+                int confirmedHost = (nc->roster.currentHostId == nc->myId);
+                mutex_unlock(&nc->mutex);
+
+                if (!confirmedHost)
+                {
+                    printf("[MIGRACION] Aviso: el servidor local no confirmo a jugador %d como host\n",
+                           nc->myId);
+                    fflush(stdout);
+                }
+
                 strncpy(nc->hostIp, "127.0.0.1", sizeof(nc->hostIp) - 1);
                 connected = 1;
                 break;
@@ -460,10 +508,8 @@ static THREAD_RET reconnectWorker(void *arg)
             }
 
             char targetIp[64];
-            mutex_lock(&nc->mutex);
-            strncpy(targetIp, nc->roster.ips[nextHostId - 1], sizeof(targetIp) - 1);
+            strncpy(targetIp, migrationRoster.ips[nextHostId - 1], sizeof(targetIp) - 1);
             targetIp[sizeof(targetIp) - 1] = '\0';
-            mutex_unlock(&nc->mutex);
 
             if (targetIp[0] != '\0' && doConnect(nc, targetIp) && doHandshake(nc))
             {

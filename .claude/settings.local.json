@@ -15,7 +15,12 @@
       "Bash(fuser 5000/tcp)",
       "Bash(kill -9 24493)",
       "Bash(pkill -9 -f test_migration_server)",
-      "Bash(pkill -9 -f futbolito_server)"
+      "Bash(pkill -9 -f futbolito_server)",
+      "Bash(gcc -Wall -Wextra -fsyntax-only -Iinclude /home/tinypawssy/Documents/GitHub/futbolito/src/server.c)",
+      "Bash(gcc -Wall -Wextra -fsyntax-only -Iinclude /home/tinypawssy/Documents/GitHub/futbolito/src/network.c)",
+      "Bash(gcc -Wall -Wextra -I /home/tinypawssy/Documents/GitHub/futbolito/include -I /home/tinypawssy/Documents/GitHub/futbolito/src -o /tmp/claude-1000/-home-tinypawssy-Documents-GitHub-futbolito/0cfd8e3f-1be3-4cac-8b36-bffa45863b98/scratchpad/test_election /tmp/claude-1000/-home-tinypawssy-Documents-GitHub-futbolito/0cfd8e3f-1be3-4cac-8b36-bffa45863b98/scratchpad/test_election.c -lpthread)",
+      "Bash(/tmp/claude-1000/-home-tinypawssy-Documents-GitHub-futbolito/0cfd8e3f-1be3-4cac-8b36-bffa45863b98/scratchpad/test_election)",
+      "Bash(gcc -Wall -Wextra -I /home/tinypawssy/Documents/GitHub/futbolito/include -I /home/tinypawssy/Documents/GitHub/futbolito/src -o /tmp/claude-1000/-home-tinypawssy-Documents-GitHub-futbolito/0cfd8e3f-1be3-4cac-8b36-bffa45863b98/scratchpad/test_election /tmp/claude-1000/-home-tinypawssy-Documents-GitHub-futbolito/0cfd8e3f-1be3-4cac-8b36-bffa45863b98/scratchpad/test_election.c /home/tinypawssy/Documents/GitHub/futbolito/src/server.c /home/tinypawssy/Documents/GitHub/futbolito/src/game.c /home/tinypawssy/Documents/GitHub/futbolito/src/player.c /home/tinypawssy/Documents/GitHub/futbolito/src/ball.c /home/tinypawssy/Documents/GitHub/futbolito/src/physics.c -lpthread)"
     ]
   }
 }

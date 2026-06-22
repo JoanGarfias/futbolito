@@ -239,6 +239,7 @@ static THREAD_RET clientThread(void *arg)
             server.roster.currentHostId = assignedId; /* el primero en unirse es el host */
 
         server.game.players[assignedId - 1].active = 1;
+        server.roster.slotActive[assignedId - 1] = 1;
     }
 
     JoinResponsePacket joinResp;
@@ -261,6 +262,7 @@ static THREAD_RET clientThread(void *arg)
     {
         mutex_lock(&server.mutex);
         server.game.players[assignedId - 1].active = 0;
+        server.roster.slotActive[assignedId - 1] = 0;
         mutex_unlock(&server.mutex);
         closesocket(clientSocket);
         return 0;
@@ -316,9 +318,11 @@ static THREAD_RET clientThread(void *arg)
 
     /* Al desconectarse, marcamos al jugador como inactivo (bajo el mutex).
      * El roster (slotUsed/ips) NO se borra: asi, si la misma IP reconecta,
-     * recupera su id. */
+     * recupera su id. slotActive si se borra: ya no esta conectado AHORA,
+     * aunque siga "reservado" para rejoin. */
     mutex_lock(&server.mutex);
     server.game.players[myIndex].active = 0;
+    server.roster.slotActive[myIndex] = 0;
     mutex_unlock(&server.mutex);
 
     printf("[SERVIDOR] Jugador %d desconectado\n", assignedId);
@@ -394,6 +398,10 @@ int serverStartWithRoster(const SessionRoster *roster)
     for (int i = 0; i < MAX_PLAYERS; i++)
         server.game.players[i].active = 0;
 
+    /* Si viene de una migracion, el roster ya trae slotActive corregido (el
+     * host caido marcado inactivo, ver computeNextHostAmongActive en
+     * network.c) y currentHostId = este equipo. Se copia tal cual: cada
+     * jugador reconfirma su slotActive al rehacer el handshake. */
     if (roster != NULL)
         server.roster = *roster;
     else
