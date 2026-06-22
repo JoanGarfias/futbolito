@@ -18,6 +18,7 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#define socket_shutdown(sock) shutdown((sock), SD_BOTH)
 #else
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -26,6 +27,7 @@
 #define SOCKET int
 #define INVALID_SOCKET (-1)
 #define closesocket close
+#define socket_shutdown(sock) shutdown((sock), SHUT_RDWR)
 #endif
 
 #include "../include/threads.h"
@@ -127,6 +129,7 @@ static int doConnect(NetClient *nc, const char *ip)
 
     if (connect(nc->sock, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
+        socket_shutdown(nc->sock);
         closesocket(nc->sock);
         nc->sock = INVALID_SOCKET;
         return 0;
@@ -272,6 +275,7 @@ int netReconnect(NetClient *nc)
      * bloqueado en recv(), se desbloquea y podemos esperarlo sin trabarnos. */
     if (nc->sock != INVALID_SOCKET)
     {
+        socket_shutdown(nc->sock);
         closesocket(nc->sock);
         nc->sock = INVALID_SOCKET;
     }
@@ -294,6 +298,8 @@ int netReconnect(NetClient *nc)
     }
 
     nc->connected = 1;
+    printf("[MIGRACION] Nuevo host: jugador %d\n", nc->currentHostId);
+    fflush(stdout);
 
     if (!thread_create(&nc->receiver, receiverThread, nc))
     {
@@ -369,7 +375,10 @@ void netDisconnect(NetClient *nc)
     nc->running = 0;
 
     if (nc->sock != INVALID_SOCKET)
+    {
+        socket_shutdown(nc->sock);
         closesocket(nc->sock); /* desbloquea el recv() del hilo receptor */
+    }
 
     thread_join(nc->receiver);
 

@@ -23,6 +23,7 @@
 #ifdef _WIN32
 #include <winsock2.h>
 typedef int socklen_t;
+#define socket_shutdown(sock) shutdown((sock), SD_BOTH)
 #else
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -31,6 +32,7 @@ typedef int socklen_t;
 #define SOCKET int
 #define INVALID_SOCKET (-1)
 #define closesocket close
+#define socket_shutdown(sock) shutdown((sock), SHUT_RDWR)
 #endif
 
 #include "../include/threads.h"
@@ -320,6 +322,7 @@ int serverStart(void)
 void serverStop(void)
 {
     server.running = 0;
+    socket_shutdown(server.serverSocket);
     closesocket(server.serverSocket); /* desbloquea el accept() */
 
     thread_join(server.accept);

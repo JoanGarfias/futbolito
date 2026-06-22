@@ -31,6 +31,9 @@ typedef struct
 static Anim animIdle[FACE_COUNT]; /* quieto: abajo, arriba, lado */
 static Anim animWalk[FACE_COUNT]; /* caminando: abajo, arriba, lado */
 
+/* Textura del balón (si existe) */
+static SDL_Texture *ballTex = NULL;
+
 /* Estado de animacion por jugador (lo lleva el render, sirve para locales y
  * remotos porque deducimos el movimiento comparando posiciones). */
 static float prevX[MAX_PLAYERS];
@@ -67,6 +70,14 @@ void loadSprites(SDL_Renderer *renderer)
     animWalk[FACE_DOWN] = loadAnim(renderer, "assets/sprites/walk_down.png");
     animWalk[FACE_UP] = loadAnim(renderer, "assets/sprites/walk_up.png");
     animWalk[FACE_SIDE] = loadAnim(renderer, "assets/sprites/walk_side.png");
+
+    /* Cargamos el sprite del balón si existe */
+    SDL_Surface *bsurf = IMG_Load("assets/sprites/balon.png");
+    if (bsurf != NULL)
+    {
+        ballTex = SDL_CreateTextureFromSurface(renderer, bsurf);
+        SDL_FreeSurface(bsurf);
+    }
 }
 
 void freeSprites(void)
@@ -82,6 +93,12 @@ void freeSprites(void)
     }
 
     IMG_Quit();
+
+    if (ballTex)
+    {
+        SDL_DestroyTexture(ballTex);
+        ballTex = NULL;
+    }
 }
 
 void renderText(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color)
@@ -405,7 +422,14 @@ void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
         game->ball.size,
         game->ball.size};
 
-    SDL_RenderFillRect(renderer, &ballRect);
+    if (ballTex != NULL)
+    {
+        SDL_RenderCopy(renderer, ballTex, NULL, &ballRect);
+    }
+    else
+    {
+        SDL_RenderFillRect(renderer, &ballRect);
+    }
 
     // Cartel de ganador
     if (game->winner >= 0 && game->winner < MAX_PLAYERS)

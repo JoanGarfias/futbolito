@@ -59,6 +59,15 @@ Genera `futbolito` y `futbolito_server`.
 
 **Controles:** WASD para moverte, ESC para salir.
 
+### Importante: dos modos distintos
+- `futbolito_server` es un servidor dedicado fijo. Si ese proceso se cierra, los
+  clientes se quedan sin host porque no hay migración automática en ese modo.
+- `futbolito <id> <ip1> <ip2> <ip3> <ip4>` es el modo punto a punto con
+  migración de host. Ahí el host inicial es el jugador 1, o sea la primera IP
+  de la lista.
+- Si quieres que otra PC sea host al inicio, cambia el orden de las IPs para que
+  esa máquina quede en la posición 1.
+
 ### Probar en una sola PC (varias ventanas)
 ```
 build/futbolito_server.exe          # 1) el servidor
