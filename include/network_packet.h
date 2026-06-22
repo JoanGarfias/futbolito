@@ -11,6 +11,7 @@ typedef struct
     float dirX;
     float dirY;
     int active;
+    int joinOrder;
 } PlayerPacket;
 
 typedef struct

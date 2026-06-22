@@ -88,6 +88,7 @@ static THREAD_RET receiverThread(void *arg)
         for (int i = 0; i < MAX_PLAYERS; i++)
         {
             nc->game->players[i].active = state.players[i].active;
+            nc->game->players[i].joinOrder = state.players[i].joinOrder;
 
             if (i == localIndex)
                 continue; /* la posicion local la maneja el input */
@@ -210,6 +211,63 @@ static int establishConnection(NetClient *nc)
     return 0;
 }
 
+/* Intenta una sola vez con el host seleccionado en currentHostId. */
+static int connectSelectedHost(NetClient *nc)
+{
+    if (nc->peerCount <= 1)
+        return doConnect(nc, nc->peers[0]);
+
+    int hostId = nc->currentHostId;
+    if (hostId < 1 || hostId > nc->peerCount)
+        hostId = 1;
+    nc->currentHostId = hostId;
+
+    if (hostId == nc->myId)
+    {
+        if (!nc->hosting)
+        {
+            if (serverStart())
+            {
+                nc->hosting = 1;
+                printf("[HOST] Este equipo (jugador %d) ahora es el HOST\n",
+                       nc->myId);
+                fflush(stdout);
+                thread_sleep_ms(300);
+            }
+        }
+
+        if (nc->hosting)
+            return doConnect(nc, "127.0.0.1");
+
+        return 0;
+    }
+
+    return doConnect(nc, nc->peers[hostId - 1]);
+}
+
+/* Elige al jugador activo mas antiguo segun el orden en que llego al server. */
+static int pickOldestActivePlayer(NetClient *nc)
+{
+    int chosenId = 0;
+    int bestOrder = 0;
+
+    for (int i = 0; i < nc->peerCount; i++)
+    {
+        Player *player = &nc->game->players[i];
+
+        if (!player->active || player->joinOrder <= 0)
+            continue;
+
+        if (bestOrder == 0 || player->joinOrder < bestOrder)
+        {
+            bestOrder = player->joinOrder;
+            chosenId = i + 1;
+        }
+    }
+
+    return chosenId;
+}
+
 /* Reintenta la eleccion de host hasta que aparezca uno disponible.
  * Esto evita que el cliente se rinda mientras el nuevo host termina de
  * arrancar tras la caida del anterior. */
@@ -224,6 +282,24 @@ static int waitForConnection(NetClient *nc)
 
         printf("[MIGRACION] Sin host disponible, reintentando en %d ms...\n",
                retryDelayMs);
+        fflush(stdout);
+        thread_sleep_ms(retryDelayMs);
+    }
+
+    return 0;
+}
+
+/* Reintenta sin cambiar de candidato: sirve para la migracion de host. */
+static int waitForSpecificHost(NetClient *nc)
+{
+    const int retryDelayMs = 1000;
+
+    while (nc->running)
+    {
+        if (connectSelectedHost(nc))
+            return 1;
+
+        printf("[MIGRACION] Esperando a que el nuevo host arranque...\n");
         fflush(stdout);
         thread_sleep_ms(retryDelayMs);
     }
@@ -303,16 +379,31 @@ int netReconnect(NetClient *nc)
 
     thread_join(nc->receiver);
 
-    /* El host anterior cayo: el siguiente equipo toma el relevo. */
-    nc->currentHostId++;
-    if (nc->currentHostId > nc->peerCount)
-        nc->currentHostId = 1;
+    /* El host anterior cayo: lo sacamos del estado local y elegimos al
+     * jugador activo mas antiguo que quede en el servidor. */
+    if (nc->currentHostId >= 1 && nc->currentHostId <= nc->peerCount)
+    {
+        mutex_lock(&nc->mutex);
+        nc->game->players[nc->currentHostId - 1].active = 0;
+        nc->game->players[nc->currentHostId - 1].joinOrder = 0;
+        mutex_unlock(&nc->mutex);
+    }
 
-    printf("[MIGRACION] Buscando nuevo host a partir del jugador %d...\n",
+    nc->currentHostId = pickOldestActivePlayer(nc);
+
+    if (nc->currentHostId == 0)
+    {
+        printf("[MIGRACION] No quedan jugadores activos para tomar el host\n");
+        fflush(stdout);
+        nc->connected = 0;
+        return 0;
+    }
+
+    printf("[MIGRACION] Buscando nuevo host: jugador %d\n",
            nc->currentHostId);
     fflush(stdout);
 
-    if (!waitForConnection(nc))
+    if (!waitForSpecificHost(nc))
     {
         nc->connected = 0;
         return 0;
@@ -349,6 +440,7 @@ void netSendLocalPlayer(NetClient *nc, GameState *game)
     packet.dirX = game->players[index].dirX;
     packet.dirY = game->players[index].dirY;
     packet.active = 1;
+    packet.joinOrder = 0;
     mutex_unlock(&nc->mutex);
 
     if (send(nc->sock, (char *)&packet, sizeof(PlayerPacket), 0) <= 0)

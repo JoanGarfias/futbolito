@@ -16,4 +16,5 @@ void initPlayer(Player *player, int id, float x, float y)
     player->width = 30;
     player->height = 30;
     player->active = 1;
+    player->joinOrder = 0;
 }
