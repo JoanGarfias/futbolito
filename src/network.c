@@ -40,7 +40,7 @@
 
 #define SERVER_PORT 5000
 
-/* Definicion real del tipo opaco NetClient. */
+/* Definicion real del tipo opaco NetClient. REAL*/
 struct NetClient
 {
     SOCKET sock;
