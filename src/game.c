@@ -14,6 +14,7 @@ void resetBall(GameState *game)
 void initGame(GameState *game)
 {
     game->running = 1;
+    game->winner = -1;
 
     for (int i = 0; i < MAX_PLAYERS; i++)
     {

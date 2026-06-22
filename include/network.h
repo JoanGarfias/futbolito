@@ -2,32 +2,49 @@
 #define NETWORK_H
 
 #include "game.h"
-#include "network_packet.h"
 
-#define MAX_NETWORK_PLAYERS 4
+/*
+ * CLIENTE de red del Futbolito (con migracion de host / punto a punto).
+ *
+ * NetClient es un tipo OPACO: su definicion real (socket, mutex, hilo) vive en
+ * network.c. Asi este header NO arrastra winsock2.h/windows.h, evitando
+ * conflictos con SDL en main.c.
+ *
+ * Dos modos segun cuantas IPs reciba:
+ *   - 1 IP  -> cliente puro: se conecta a ese servidor; si se cae, termina.
+ *   - 4 IPs -> modo punto a punto: el host es el equipo de menor id vivo. Si el
+ *              host se cae, los demas eligen al siguiente y se reconectan; el
+ *              equipo elegido ARRANCA el servidor embebido (migracion de host).
+ *
+ * El hilo principal (SDL) y el hilo receptor acceden al mismo GameState, por
+ * eso TODO acceso debe ir entre netLockState()/netUnlockState() (seccion
+ * critica).
+ */
 
-typedef struct
-{
-    int id;
-    float x;
-    float y;
-    int active;
-} NetworkPlayer;
+typedef struct NetClient NetClient;
 
-typedef struct
-{
-    int hostId;
-    int localPlayerId;
-    NetworkPlayer players[MAX_NETWORK_PLAYERS];
-} NetworkState;
+/* Conecta usando la lista de IPs de los equipos (peers[0..peerCount-1]).
+ * myId es el id del jugador local (1..4). Devuelve NULL si no logra conectar. */
+NetClient *netConnect(const char *peers[], int peerCount, int myId, GameState *game);
 
-void initNetworkState(NetworkState *network, int localPlayerId);
-void syncNetworkFromGame(NetworkState *network, GameState *game);
-void printNetworkState(NetworkState *network);
-void electNewHost(NetworkState *network);
+/* Envia la posicion del jugador local al host actual. */
+void netSendLocalPlayer(NetClient *nc, GameState *game);
 
-int initNetworkClient(const char *serverIp);
-void shutdownNetworkClient();
-int sendLocalPlayerAndReceiveState(GameState *game, int localPlayerId, const char *serverIp);
+/* Entra/sale de la seccion critica que protege el GameState compartido. */
+void netLockState(NetClient *nc);
+void netUnlockState(NetClient *nc);
+
+/* 1 si la conexion sigue viva, 0 si se perdio. */
+int netIsConnected(NetClient *nc);
+
+/* Tras perder la conexion: elige el siguiente host y se reconecta (migracion).
+ * Devuelve 1 si logro reconectar, 0 si ya no hay host disponible. */
+int netReconnect(NetClient *nc);
+
+/* Id del host al que estamos conectados ahora (para mostrarlo en pantalla). */
+int netCurrentHost(NetClient *nc);
+
+/* Cierra la conexion, detiene el hilo receptor y libera recursos. */
+void netDisconnect(NetClient *nc);
 
 #endif
