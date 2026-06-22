@@ -64,8 +64,7 @@ Genera `futbolito` y `futbolito_server`.
   clientes se quedan sin host porque no hay migración automática en ese modo.
 - `futbolito <id> <ip1> <ip2> <ip3> <ip4>` es el modo punto a punto con
   migración de host. Ahí el host inicial es el jugador 1, o sea la primera IP
-  de la lista. Cuando ese host cae, la migración toma al jugador activo que
-  se conectó primero al servidor.
+  de la lista.
 - Si quieres que otra PC sea host al inicio, cambia el orden de las IPs para que
   esa máquina quede en la posición 1.
 

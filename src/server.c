@@ -50,7 +50,6 @@ typedef struct
     GameState game; /* recurso compartido protegido por la seccion critica */
     Mutex mutex;    /* mutex que protege 'game' */
     int running;
-    int nextJoinOrder;
     SOCKET serverSocket;
     Thread physics;
     Thread accept;
@@ -69,7 +68,6 @@ static void buildSnapshot(GamePacket *out, const GameState *g)
         out->players[i].dirX = g->players[i].dirX;
         out->players[i].dirY = g->players[i].dirY;
         out->players[i].active = g->players[i].active;
-        out->players[i].joinOrder = g->players[i].joinOrder;
         out->score[i] = g->score[i];
     }
 
@@ -195,8 +193,6 @@ static THREAD_RET clientThread(void *arg)
         p->y = packet.y;
         p->dirX = packet.dirX;
         p->dirY = packet.dirY;
-        if (!p->active)
-            p->joinOrder = server.nextJoinOrder++;
         p->active = 1;
 
         buildSnapshot(&snapshot, &server.game);
@@ -212,7 +208,6 @@ static THREAD_RET clientThread(void *arg)
     {
         mutex_lock(&server.mutex);
         server.game.players[myIndex].active = 0;
-        server.game.players[myIndex].joinOrder = 0;
         mutex_unlock(&server.mutex);
 
         printf("[SERVIDOR] Jugador %d desconectado\n", myIndex + 1);
@@ -283,7 +278,6 @@ int serverStart(void)
 
     mutex_init(&server.mutex);
     server.running = 1;
-    server.nextJoinOrder = 1;
 
     server.serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (server.serverSocket == INVALID_SOCKET)

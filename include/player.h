@@ -17,7 +17,6 @@ typedef struct
     int height;
     int active;
     int id;
-    int joinOrder;
 
 } Player;
 

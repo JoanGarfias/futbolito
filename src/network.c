@@ -88,7 +88,6 @@ static THREAD_RET receiverThread(void *arg)
         for (int i = 0; i < MAX_PLAYERS; i++)
         {
             nc->game->players[i].active = state.players[i].active;
-            nc->game->players[i].joinOrder = state.players[i].joinOrder;
 
             if (i == localIndex)
                 continue; /* la posicion local la maneja el input */
@@ -140,9 +139,27 @@ static int doConnect(NetClient *nc, const char *ip)
 }
 
 /*
- * Establece conexion con el host actual. En modo punto a punto, si el host
- * soy yo arranco el servidor embebido; si el host no responde, avanzo al
- * siguiente equipo y reintento (eleccion de host).
+ * Calcula, de forma deterministica, el id del siguiente host a partir del id
+ * del host caido. Todos los equipos parten del mismo previousHostId, asi que
+ * todos llegan al mismo resultado sin necesidad de coordinarse por red.
+ * Regla: el siguiente equipo en el anillo (wrap de peerCount a 1).
+ */
+static int computeNextHostId(int previousHostId, int peerCount)
+{
+    if (peerCount < 1)
+        return 1;
+
+    if (previousHostId < 1 || previousHostId > peerCount)
+        previousHostId = peerCount; /* normaliza: el modulo da 1 como siguiente */
+
+    return (previousHostId % peerCount) + 1;
+}
+
+/*
+ * Establece conexion con el host elegido (nc->currentHostId). En modo punto
+ * a punto NO se recorre el anillo probando ids: solo el equipo elegido
+ * arranca el servidor embebido, y todos los demas unicamente reintentan
+ * conectarse a esa IP hasta que responda.
  */
 static int establishConnection(NetClient *nc)
 {
@@ -160,146 +177,76 @@ static int establishConnection(NetClient *nc)
         return 0;
     }
 
-    /* Modo punto a punto: probamos hosts hasta encontrar uno (o ser host). */
-    for (int intentos = 0; intentos < nc->peerCount; intentos++)
+    int electedHostId = nc->currentHostId;
+    if (electedHostId < 1 || electedHostId > nc->peerCount)
+        electedHostId = 1;
+    nc->currentHostId = electedHostId;
+
+    if (nc->myId == electedHostId)
     {
-        int hostId = nc->currentHostId;
-        if (hostId < 1 || hostId > nc->peerCount)
-            hostId = 1;
-        nc->currentHostId = hostId;
-
-        if (hostId == nc->myId)
+        /* Camino A: soy el host elegido. Arranco el servidor (si no esta ya
+         * corriendo) y me conecto a mi propio servidor. Nunca avanzo al
+         * siguiente id ni pruebo otras IPs. */
+        if (!nc->hosting)
         {
-            /* Me toca ser host: arranco el servidor embebido (si no esta ya). */
-            if (!nc->hosting)
-            {
-                if (serverStart())
-                {
-                    nc->hosting = 1;
-                    printf("[HOST] Este equipo (jugador %d) ahora es el HOST\n",
-                           nc->myId);
-                    fflush(stdout);
-                    thread_sleep_ms(300); /* dar tiempo al listen() */
-                }
-            }
+            if (!serverStart())
+                return 0;
 
-            if (nc->hosting && doConnect(nc, "127.0.0.1"))
-            {
-                printf("[CLIENTE] Conectado a mi propio servidor\n");
-                fflush(stdout);
-                return 1;
-            }
-        }
-        else
-        {
-            if (doConnect(nc, nc->peers[hostId - 1]))
-            {
-                printf("[CLIENTE] Conectado al host (jugador %d, %s)\n",
-                       hostId, nc->peers[hostId - 1]);
-                fflush(stdout);
-                return 1;
-            }
+            nc->hosting = 1;
+            printf("[HOST] Este equipo (jugador %d) ahora es el HOST\n", nc->myId);
+            fflush(stdout);
+            thread_sleep_ms(500); /* dar tiempo al bind()/listen() local */
         }
 
-        /* Ese host no respondio: pasamos al siguiente equipo. */
-        thread_sleep_ms(500);
-        nc->currentHostId++;
-        if (nc->currentHostId > nc->peerCount)
-            nc->currentHostId = 1;
+        if (doConnect(nc, "127.0.0.1"))
+        {
+            printf("[CLIENTE] Conectado a mi propio servidor\n");
+            fflush(stdout);
+            return 1;
+        }
+
+        return 0; /* el servidor local aun no acepta conexiones: reintentar */
+    }
+
+    /* Camino B: no soy el host elegido. Solo intento conectar al host
+     * elegido; nunca arranco un servidor propio ni recorro el anillo. */
+    if (doConnect(nc, nc->peers[electedHostId - 1]))
+    {
+        printf("[CLIENTE] Conectado al host (jugador %d, %s)\n",
+               electedHostId, nc->peers[electedHostId - 1]);
+        fflush(stdout);
+        return 1;
     }
 
     return 0;
 }
 
-/* Intenta una sola vez con el host seleccionado en currentHostId. */
-static int connectSelectedHost(NetClient *nc)
-{
-    if (nc->peerCount <= 1)
-        return doConnect(nc, nc->peers[0]);
-
-    int hostId = nc->currentHostId;
-    if (hostId < 1 || hostId > nc->peerCount)
-        hostId = 1;
-    nc->currentHostId = hostId;
-
-    if (hostId == nc->myId)
-    {
-        if (!nc->hosting)
-        {
-            if (serverStart())
-            {
-                nc->hosting = 1;
-                printf("[HOST] Este equipo (jugador %d) ahora es el HOST\n",
-                       nc->myId);
-                fflush(stdout);
-                thread_sleep_ms(300);
-            }
-        }
-
-        if (nc->hosting)
-            return doConnect(nc, "127.0.0.1");
-
-        return 0;
-    }
-
-    return doConnect(nc, nc->peers[hostId - 1]);
-}
-
-/* Elige al jugador activo mas antiguo segun el orden en que llego al server. */
-static int pickOldestActivePlayer(NetClient *nc)
-{
-    int chosenId = 0;
-    int bestOrder = 0;
-
-    for (int i = 0; i < nc->peerCount; i++)
-    {
-        Player *player = &nc->game->players[i];
-
-        if (!player->active || player->joinOrder <= 0)
-            continue;
-
-        if (bestOrder == 0 || player->joinOrder < bestOrder)
-        {
-            bestOrder = player->joinOrder;
-            chosenId = i + 1;
-        }
-    }
-
-    return chosenId;
-}
-
-/* Reintenta la eleccion de host hasta que aparezca uno disponible.
+/* Reintenta la conexion al host elegido hasta que aparezca disponible.
  * Esto evita que el cliente se rinda mientras el nuevo host termina de
  * arrancar tras la caida del anterior. */
 static int waitForConnection(NetClient *nc)
 {
-    const int retryDelayMs = 1000;
+    const int retryDelayMs = 1500;
 
     while (nc->running)
     {
         if (establishConnection(nc))
             return 1;
 
-        printf("[MIGRACION] Sin host disponible, reintentando en %d ms...\n",
-               retryDelayMs);
-        fflush(stdout);
-        thread_sleep_ms(retryDelayMs);
-    }
-
-    return 0;
-}
-
-/* Reintenta sin cambiar de candidato: sirve para la migracion de host. */
-static int waitForSpecificHost(NetClient *nc)
-{
-    const int retryDelayMs = 1000;
-
-    while (nc->running)
-    {
-        if (connectSelectedHost(nc))
-            return 1;
-
-        printf("[MIGRACION] Esperando a que el nuevo host arranque...\n");
+        if (nc->peerCount > 1)
+        {
+            if (nc->myId == nc->currentHostId)
+                printf("[MIGRACION] Mi servidor local aun no responde, reintentando en %d ms...\n",
+                       retryDelayMs);
+            else
+                printf("[MIGRACION] Esperando al host elegido (jugador %d), reintentando en %d ms...\n",
+                       nc->currentHostId, retryDelayMs);
+        }
+        else
+        {
+            printf("[MIGRACION] Sin host disponible, reintentando en %d ms...\n",
+                   retryDelayMs);
+        }
         fflush(stdout);
         thread_sleep_ms(retryDelayMs);
     }
@@ -379,31 +326,28 @@ int netReconnect(NetClient *nc)
 
     thread_join(nc->receiver);
 
-    /* El host anterior cayo: lo sacamos del estado local y elegimos al
-     * jugador activo mas antiguo que quede en el servidor. */
-    if (nc->currentHostId >= 1 && nc->currentHostId <= nc->peerCount)
+    /* El host anterior cayo: todos los equipos calculan el mismo siguiente
+     * host (regla deterministica) a partir del id del host caido. */
+    nc->currentHostId = computeNextHostId(nc->currentHostId, nc->peerCount);
+
+    if (nc->myId == nc->currentHostId)
     {
-        mutex_lock(&nc->mutex);
-        nc->game->players[nc->currentHostId - 1].active = 0;
-        nc->game->players[nc->currentHostId - 1].joinOrder = 0;
-        mutex_unlock(&nc->mutex);
+        printf("[MIGRACION] Soy el jugador %d: paso a ser el nuevo HOST.\n", nc->myId);
     }
-
-    nc->currentHostId = pickOldestActivePlayer(nc);
-
-    if (nc->currentHostId == 0)
+    else
     {
-        printf("[MIGRACION] No quedan jugadores activos para tomar el host\n");
-        fflush(stdout);
-        nc->connected = 0;
-        return 0;
+        /* Si este proceso habia arrancado un servidor por error (p.ej. una
+         * carrera en una migracion anterior), lo apagamos: ya no nos toca. */
+        if (nc->hosting)
+        {
+            serverStop();
+            nc->hosting = 0;
+        }
+        printf("[MIGRACION] Esperando al nuevo host: jugador %d.\n", nc->currentHostId);
     }
-
-    printf("[MIGRACION] Buscando nuevo host: jugador %d\n",
-           nc->currentHostId);
     fflush(stdout);
 
-    if (!waitForSpecificHost(nc))
+    if (!waitForConnection(nc))
     {
         nc->connected = 0;
         return 0;
@@ -440,7 +384,6 @@ void netSendLocalPlayer(NetClient *nc, GameState *game)
     packet.dirX = game->players[index].dirX;
     packet.dirY = game->players[index].dirY;
     packet.active = 1;
-    packet.joinOrder = 0;
     mutex_unlock(&nc->mutex);
 
     if (send(nc->sock, (char *)&packet, sizeof(PlayerPacket), 0) <= 0)

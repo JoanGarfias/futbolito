@@ -12,9 +12,12 @@
  *
  * Dos modos segun cuantas IPs reciba:
  *   - 1 IP  -> cliente puro: se conecta a ese servidor; si se cae, termina.
- *   - 4 IPs -> modo punto a punto: el host es el equipo de menor id vivo. Si el
- *              host se cae, los demas eligen al siguiente y se reconectan; el
- *              equipo elegido ARRANCA el servidor embebido (migracion de host).
+ *   - 4 IPs -> modo punto a punto: el host inicial es el jugador 1. Si el host
+ *              cae, todos calculan el mismo siguiente id (host+1, con wrap a
+ *              1) de forma deterministica. SOLO ese equipo arranca el
+ *              servidor embebido (serverStart()); todos los demas unicamente
+ *              reintentan connect() contra esa IP, nunca arrancan servidor
+ *              propio.
  *
  * El hilo principal (SDL) y el hilo receptor acceden al mismo GameState, por
  * eso TODO acceso debe ir entre netLockState()/netUnlockState() (seccion
