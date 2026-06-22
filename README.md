@@ -59,32 +59,44 @@ Genera `futbolito` y `futbolito_server`.
 
 **Controles:** WASD para moverte, ESC para salir.
 
-### Importante: dos modos distintos
-- `futbolito_server` es un servidor dedicado fijo. Si ese proceso se cierra, los
-  clientes se quedan sin host porque no hay migración automática en ese modo.
-- `futbolito <id> <ip1> <ip2> <ip3> <ip4>` es el modo punto a punto con
-  migración de host. Ahí el host inicial es el jugador 1, o sea la primera IP
-  de la lista.
-- Si quieres que otra PC sea host al inicio, cambia el orden de las IPs para que
-  esa máquina quede en la posición 1.
+### Importante: no hace falta número de jugador ni lista de IPs
+El servidor asigna el id de cada jugador automáticamente (el primero que se
+une es el jugador 1, el siguiente el 2, etc.) y recuerda el roster (qué IP
+tiene cada id) para la migración de host.
+
+- `futbolito --host` lo corre el primer jugador / quien crea la sesión:
+  arranca el servidor embebido y se conecta a sí mismo (queda con el id 1).
+- `futbolito <ip_del_host>` lo corren los demás: se conectan a esa IP y el
+  servidor les asigna el siguiente id libre (2, 3 o 4).
+- `futbolito` (sin argumentos) equivale a `futbolito 127.0.0.1`: solo cliente,
+  útil para probar contra un `futbolito_server` dedicado.
+- `futbolito_server` sigue existiendo como servidor dedicado fijo para pruebas
+  rápidas; no requiere `--host` (ya entiende el mismo protocolo).
+
+Si el host (`--host`) se cae, el siguiente jugador registrado toma el control
+automáticamente (arranca su propio servidor embebido) y el resto se reconecta
+a él solo, sin congelar la ventana del juego (aparece un aviso
+"Reconectando..." mientras tanto).
 
 ### Probar en una sola PC (varias ventanas)
 ```
-build/futbolito_server.exe          # 1) el servidor
-build/futbolito.exe 1               # 2) jugador 1
-build/futbolito.exe 2               # 3) jugador 2 (otra terminal)
+build/futbolito.exe --host          # 1) crea la sesion (jugador 1, host)
+build/futbolito.exe 127.0.0.1       # 2) jugador 2 (otra terminal)
+build/futbolito.exe 127.0.0.1       # 3) jugador 3 (otra terminal)
 ```
 
-### Con 4 equipos en red (modo punto a punto con migración de host)
-En cada computadora se corre el cliente pasándole su número de jugador y la
-lista de las 4 IPs (en el mismo orden en todas las máquinas):
+### Con varios equipos en red (migración de host automática)
+En la PC que crea la sesión:
 ```
-futbolito 1 192.168.0.11 192.168.0.12 192.168.0.13 192.168.0.14
-futbolito 2 192.168.0.11 192.168.0.12 192.168.0.13 192.168.0.14
-...
+futbolito --host
 ```
-El equipo 1 arranca como host. Si esa PC se apaga, el equipo 2 toma el control
-solo y los demás se reconectan a él.
+En cada PC adicional, pasándole la IP de la PC anterior:
+```
+futbolito 192.168.0.11
+```
+El primer equipo (`--host`) arranca como host con id 1. Si esa PC se apaga, el
+jugador 2 toma el control solo (sin que nadie tenga que volver a escribir
+nada) y los demás se reconectan a él.
 
 ## Sprites
 Los sprites de los jugadores van en `assets/sprites/` (ver el README de esa
