@@ -38,7 +38,7 @@
 #define SERVER_PORT 5000
 #define MAX_PEERS 4
 
-/* Definicion real del tipo opaco NetClient. */
+/* Definicion real del tipo opaco NetClient. REAL*/
 struct NetClient
 {
     SOCKET sock;
