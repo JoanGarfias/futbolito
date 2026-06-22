@@ -210,6 +210,27 @@ static int establishConnection(NetClient *nc)
     return 0;
 }
 
+/* Reintenta la eleccion de host hasta que aparezca uno disponible.
+ * Esto evita que el cliente se rinda mientras el nuevo host termina de
+ * arrancar tras la caida del anterior. */
+static int waitForConnection(NetClient *nc)
+{
+    const int retryDelayMs = 1000;
+
+    while (nc->running)
+    {
+        if (establishConnection(nc))
+            return 1;
+
+        printf("[MIGRACION] Sin host disponible, reintentando en %d ms...\n",
+               retryDelayMs);
+        fflush(stdout);
+        thread_sleep_ms(retryDelayMs);
+    }
+
+    return 0;
+}
+
 NetClient *netConnect(const char *peers[], int peerCount, int myId, GameState *game)
 {
 #ifdef _WIN32
@@ -247,7 +268,7 @@ NetClient *netConnect(const char *peers[], int peerCount, int myId, GameState *g
 
     mutex_init(&nc->mutex);
 
-    if (!establishConnection(nc))
+    if (!waitForConnection(nc))
     {
         mutex_destroy(&nc->mutex);
         free(nc);
@@ -291,7 +312,7 @@ int netReconnect(NetClient *nc)
            nc->currentHostId);
     fflush(stdout);
 
-    if (!establishConnection(nc))
+    if (!waitForConnection(nc))
     {
         nc->connected = 0;
         return 0;
