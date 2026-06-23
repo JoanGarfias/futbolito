@@ -9,7 +9,7 @@ Es un juego de futbolito multijugador para hasta 4 personas en red local. Cada q
 - Sadie Balboa Betanzos
 - Joshua Alexis Horne Gallegos
 - Orlando Cabrera Jimenez
-- Joan Alvarado Garfias
+- Joan Pablo Alvarado Garfias
 
 ## 🛠️ ¿Qué tecnologías usamos? (Lo mero bueno de la materia)
 
