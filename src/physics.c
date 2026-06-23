@@ -65,21 +65,31 @@ void updatePhysics(GameState *game)
     if (game->winner != -1)
         return;
 
+    /* Para el sonido de patada: solo cuenta como golpe NUEVO si ese jugador
+     * no la estaba tocando ya en el tick anterior (si no, sonaria 60 veces
+     * por segundo mientras la trae pegada). Es independiente de
+     * lastPlayerTouched porque si la pelota rebota y vuelve al MISMO
+     * jugador, eso tambien debe sonar como golpe nuevo. */
+    static int wasTouching[MAX_PLAYERS] = {0, 0, 0, 0};
+
     // Colisión jugador-balón
     for (int i = 0; i < MAX_PLAYERS; i++)
     {
         Player *player = &game->players[i];
 
         if (!player->active)
-            continue;
-
-        if (checkCollision(
-                player->x, player->y, player->width, player->height,
-                ball->x, ball->y, ball->size, ball->size))
         {
-            /* solo cuenta como golpe nuevo si no era este mismo jugador el
-             * que ya la traia pegada (si no, sonaria 60 veces por segundo) */
-            if (ball->lastPlayerTouched != i)
+            wasTouching[i] = 0;
+            continue;
+        }
+
+        int touchingNow = checkCollision(
+            player->x, player->y, player->width, player->height,
+            ball->x, ball->y, ball->size, ball->size);
+
+        if (touchingNow)
+        {
+            if (!wasTouching[i])
                 ball->kickCount++;
 
             ball->vx = player->dirX * KICK_POWER;
@@ -91,6 +101,8 @@ void updatePhysics(GameState *game)
                 ball->vx = 4.0f;
             }
         }
+
+        wasTouching[i] = touchingNow;
     }
 
     // Colisión jugador-jugador
