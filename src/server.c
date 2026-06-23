@@ -54,6 +54,38 @@ typedef struct
     char ip[64];
 } ClientConn;
 
+/* Helper para asegurar que se reciben exactamente 'size' bytes. */
+static int recv_all(SOCKET sock, char *buffer, int size)
+{
+    int total = 0;
+    while (total < size)
+    {
+        int bytes = recv(sock, buffer + total, size - total, 0);
+        if (bytes <= 0)
+        {
+            return bytes; /* Error o conexion cerrada */
+        }
+        total += bytes;
+    }
+    return total;
+}
+
+/* Helper para asegurar que se envian exactamente 'size' bytes. */
+static int send_all(SOCKET sock, const char *buffer, int size)
+{
+    int total = 0;
+    while (total < size)
+    {
+        int bytes = send(sock, buffer + total, size - total, 0);
+        if (bytes <= 0)
+        {
+            return bytes; /* Error o conexion cerrada */
+        }
+        total += bytes;
+    }
+    return total;
+}
+
 /* Convierte el GameState interno al paquete que viaja por la red. */
 static void buildSnapshot(GamePacket *out, const GameState *g)
 {
@@ -193,7 +225,7 @@ static THREAD_RET clientThread(void *arg)
     free(conn);
 
     JoinRequestPacket joinReq;
-    int joinBytes = recv(clientSocket, (char *)&joinReq, sizeof(joinReq), 0);
+    int joinBytes = recv_all(clientSocket, (char *)&joinReq, sizeof(joinReq));
 
     if (joinBytes != (int)sizeof(joinReq) || joinReq.type != NET_MSG_JOIN_REQUEST)
     {
@@ -235,12 +267,12 @@ static THREAD_RET clientThread(void *arg)
     {
         printf("[SERVIDOR] Conexion rechazada desde %s: sala llena\n", remoteIp);
         fflush(stdout);
-        send(clientSocket, (char *)&joinResp, sizeof(joinResp), 0);
+        send_all(clientSocket, (char *)&joinResp, sizeof(joinResp));
         closesocket(clientSocket);
         return 0;
     }
 
-    if (send(clientSocket, (char *)&joinResp, sizeof(joinResp), 0) <= 0)
+    if (send_all(clientSocket, (char *)&joinResp, sizeof(joinResp)) <= 0)
     {
         mutex_lock(&server.mutex);
         server.game.players[assignedId - 1].active = 0;
@@ -262,13 +294,10 @@ static THREAD_RET clientThread(void *arg)
 
     while (server.running)
     {
-        int bytes = recv(clientSocket, (char *)&packet, sizeof(PlayerPacket), 0);
-
-        if (bytes <= 0)
-            break; /* el cliente se desconecto */
+        int bytes = recv_all(clientSocket, (char *)&packet, sizeof(PlayerPacket));
 
         if (bytes != (int)sizeof(PlayerPacket))
-            continue;
+            break; /* el cliente se desconecto o error de lectura */
 
         recvCount++;
         if (recvCount == 1 || recvCount % 150 == 0) /* sin saturar la consola */
@@ -310,7 +339,7 @@ static THREAD_RET clientThread(void *arg)
 
         mutex_unlock(&server.mutex);
 
-        if (send(clientSocket, (char *)&snapshot, sizeof(GamePacket), 0) <= 0)
+        if (send_all(clientSocket, (char *)&snapshot, sizeof(GamePacket)) <= 0)
             break;
     }
 

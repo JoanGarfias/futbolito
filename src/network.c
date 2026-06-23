@@ -58,6 +58,38 @@ struct NetClient
 static THREAD_RET receiverThread(void *arg);
 static THREAD_RET reconnectWorker(void *arg);
 
+/* Helper para asegurar que se reciben exactamente 'size' bytes. */
+static int recv_all(SOCKET sock, char *buffer, int size)
+{
+    int total = 0;
+    while (total < size)
+    {
+        int bytes = recv(sock, buffer + total, size - total, 0);
+        if (bytes <= 0)
+        {
+            return bytes; /* Error o conexion cerrada */
+        }
+        total += bytes;
+    }
+    return total;
+}
+
+/* Helper para asegurar que se envian exactamente 'size' bytes. */
+static int send_all(SOCKET sock, const char *buffer, int size)
+{
+    int total = 0;
+    while (total < size)
+    {
+        int bytes = send(sock, buffer + total, size - total, 0);
+        if (bytes <= 0)
+        {
+            return bytes; /* Error o conexion cerrada */
+        }
+        total += bytes;
+    }
+    return total;
+}
+
 /* Abre el socket y se conecta a la IP dada. Devuelve 1 si conecto. */
 static int doConnect(NetClient *nc, const char *ip)
 {
@@ -91,7 +123,7 @@ static int doHandshake(NetClient *nc)
     req.type = NET_MSG_JOIN_REQUEST;
     req.preferredId = nc->myId;
 
-    if (send(nc->sock, (char *)&req, sizeof(req), 0) <= 0)
+    if (send_all(nc->sock, (char *)&req, sizeof(req)) <= 0)
     {
         closesocket(nc->sock);
         nc->sock = INVALID_SOCKET;
@@ -99,7 +131,7 @@ static int doHandshake(NetClient *nc)
     }
 
     JoinResponsePacket resp;
-    int received = recv(nc->sock, (char *)&resp, sizeof(resp), 0);
+    int received = recv_all(nc->sock, (char *)&resp, sizeof(resp));
 
     if (received != (int)sizeof(resp) || resp.type != NET_MSG_JOIN_RESPONSE ||
         resp.assignedId == 0)
@@ -139,18 +171,15 @@ static THREAD_RET receiverThread(void *arg)
 
     while (nc->running)
     {
-        int received = recv(nc->sock, (char *)&state, sizeof(GamePacket), 0);
+        int received = recv_all(nc->sock, (char *)&state, sizeof(GamePacket));
 
-        if (received <= 0)
+        if (received != (int)sizeof(GamePacket))
         {
             mutex_lock(&nc->mutex);
             nc->connected = 0;
             mutex_unlock(&nc->mutex);
             break;
         }
-
-        if (received != (int)sizeof(GamePacket))
-            continue;
 
         mutex_lock(&nc->mutex);
 
@@ -574,7 +603,7 @@ void netSendLocalPlayer(NetClient *nc, GameState *game)
     game->pendingChatMsg[0] = '\0';
     mutex_unlock(&nc->mutex);
 
-    if (send(nc->sock, (char *)&packet, sizeof(PlayerPacket), 0) <= 0)
+    if (send_all(nc->sock, (char *)&packet, sizeof(PlayerPacket)) <= 0)
     {
         mutex_lock(&nc->mutex);
         nc->connected = 0;
