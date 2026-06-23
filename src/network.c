@@ -1,15 +1,18 @@
 /*
- * CLIENTE de red del Futbolito (con migracion de host).
+ * CLIENTE de red del Futbolito (con migracion de host automatica).
  *
- * - Abre UNA conexion TCP persistente al host actual.
- * - Lanza un HILO RECEPTOR que lee en bucle el estado del juego y lo escribe
- *   en el GameState compartido.
+ * - Abre UNA conexion TCP persistente al host actual, con un handshake
+ *   (JoinRequest/JoinResponse) que asigna el id de jugador y entrega el
+ *   roster de la sesion (ver network_packet.h).
+ * - Lanza un HILO RECEPTOR que lee en bucle el estado del juego (con el
+ *   roster embebido) y lo escribe en el GameState/roster compartidos.
  * - El hilo principal (SDL) escribe la posicion del jugador local y dibuja.
- * - Si el host se cae, elige al siguiente equipo como host y se reconecta.
- *   Si el elegido es este mismo equipo, arranca el servidor embebido.
+ * - Si el host se cae, un HILO DE RECONEXION en segundo plano elige al
+ *   siguiente equipo segun el roster y se reconecta, sin bloquear el bucle
+ *   SDL. Si el elegido es este mismo equipo, arranca el servidor embebido.
  *
- * Como dos hilos tocan el mismo GameState, todo acceso se protege con un mutex
- * (SECCION CRITICA). Usa APIs nativas via threads.h.
+ * Como varios hilos tocan el mismo GameState/NetClient, todo acceso se
+ * protege con un mutex (SECCION CRITICA). Usa APIs nativas via threads.h.
  */
 
 #include <stdio.h>
@@ -18,6 +21,7 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#define socket_shutdown(sock) shutdown((sock), SD_BOTH)
 #else
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -26,6 +30,7 @@
 #define SOCKET int
 #define INVALID_SOCKET (-1)
 #define closesocket close
+#define socket_shutdown(sock) shutdown((sock), SHUT_RDWR)
 #endif
 
 #include "../include/threads.h"
@@ -34,31 +39,113 @@
 #include "../include/server.h"
 
 #define SERVER_PORT 5000
-#define MAX_PEERS 4
 
-/* Definicion real del tipo opaco NetClient. */
+/* Definicion real del tipo opaco NetClient. REAL*/
 struct NetClient
 {
     SOCKET sock;
-    int myId;
-    int running;   /* 1 mientras el hilo receptor debe seguir */
-    int connected; /* 1 mientras la conexion esta viva */
+    int myId; /* 0 hasta que el servidor lo asigna en el handshake */
+    int running;   /* 1 mientras los hilos de fondo deben seguir */
+    int connected; /* 1 mientras la conexion actual esta viva */
 
-    char peers[MAX_PEERS][64]; /* IPs de los equipos */
-    int peerCount;
-    int currentHostId; /* id del equipo que hace de host ahora */
-    int hosting;       /* 1 si este proceso arranco el servidor embebido */
+    char hostIp[64];      /* IP a la que estamos (o queremos estar) conectados */
+    int isSessionHost;    /* 1 si este proceso creo la sesion (--host) */
+    SessionRoster roster; /* copia local, se actualiza con cada snapshot */
+
+    int hosting; /* 1 si este proceso arranco el servidor embebido */
+
+    NetState state;
+    int receiverThreadActive;
+    int reconnectThreadRunning;
 
     GameState *game; /* estado compartido (apunta al de main) */
-    Mutex mutex;     /* protege 'game' y 'connected' */
+    Mutex mutex;      /* protege 'game', 'roster', 'connected', 'state', ... */
     Thread receiver;
+    Thread reconnectThread;
 };
+
+static THREAD_RET receiverThread(void *arg);
+static THREAD_RET reconnectWorker(void *arg);
+
+/* Abre el socket y se conecta a la IP dada. Devuelve 1 si conecto. */
+static int doConnect(NetClient *nc, const char *ip)
+{
+    struct sockaddr_in server;
+
+    nc->sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (nc->sock == INVALID_SOCKET)
+        return 0;
+
+    server.sin_family = AF_INET;
+    server.sin_port = htons(SERVER_PORT);
+    server.sin_addr.s_addr = inet_addr(ip);
+
+    if (connect(nc->sock, (struct sockaddr *)&server, sizeof(server)) < 0)
+    {
+        socket_shutdown(nc->sock);
+        closesocket(nc->sock);
+        nc->sock = INVALID_SOCKET;
+        return 0;
+    }
+
+    return 1;
+}
+
+/*
+ * Handshake de aplicacion sobre la conexion TCP ya abierta: pedimos un id
+ * (preferredId = nc->myId, 0 la primera vez) y el servidor nos responde con
+ * el id asignado y el roster completo de la sesion. Si el servidor rechaza
+ * (sala llena) o falla el intercambio, cierra el socket y devuelve 0.
+ */
+static int doHandshake(NetClient *nc)
+{
+    JoinRequestPacket req;
+    req.type = NET_MSG_JOIN_REQUEST;
+    req.preferredId = nc->myId;
+
+    if (send(nc->sock, (char *)&req, sizeof(req), 0) <= 0)
+    {
+        closesocket(nc->sock);
+        nc->sock = INVALID_SOCKET;
+        return 0;
+    }
+
+    JoinResponsePacket resp;
+    int received = recv(nc->sock, (char *)&resp, sizeof(resp), 0);
+
+    if (received != (int)sizeof(resp) || resp.type != NET_MSG_JOIN_RESPONSE ||
+        resp.assignedId == 0)
+    {
+        if (received == (int)sizeof(resp) && resp.assignedId == 0)
+            printf("[CLIENTE] El servidor rechazo la conexion (sala llena)\n");
+        else
+            printf("[CLIENTE] Handshake fallido con el host\n");
+        fflush(stdout);
+
+        socket_shutdown(nc->sock);
+        closesocket(nc->sock);
+        nc->sock = INVALID_SOCKET;
+        return 0;
+    }
+
+    mutex_lock(&nc->mutex);
+    nc->myId = resp.assignedId;
+    nc->roster = resp.roster;
+    mutex_unlock(&nc->mutex);
+
+    printf("[CLIENTE] Conectado. Soy el jugador %d. Host actual: jugador %d\n",
+           resp.assignedId, resp.roster.currentHostId);
+    fflush(stdout);
+
+    return 1;
+}
 
 /*
  * HILO RECEPTOR.
- * Lee paquetes de estado del servidor y los vuelca al GameState compartido,
- * siempre dentro de la seccion critica. No sobreescribe la posicion del
- * jugador local (esa la controla el input del hilo principal).
+ * Lee paquetes de estado del servidor (con el roster embebido) y los vuelca
+ * al GameState/roster compartidos, siempre dentro de la seccion critica. No
+ * sobreescribe la posicion del jugador local (esa la controla el input del
+ * hilo principal).
  */
 static THREAD_RET receiverThread(void *arg)
 {
@@ -113,108 +200,107 @@ static THREAD_RET receiverThread(void *arg)
             nc->game->chatLog[i].text[CHAT_MAX_LEN - 1] = '\0';
         }
 
+        nc->roster = state.roster; /* roster sincronizado en cada snapshot */
+
         mutex_unlock(&nc->mutex); /* ---- sale de seccion critica ---- */
     }
 
     return 0;
 }
 
-/* Abre el socket y se conecta a la IP dada. Devuelve 1 si conecto. */
-static int doConnect(NetClient *nc, const char *ip)
-{
-    struct sockaddr_in server;
-
-    nc->sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (nc->sock == INVALID_SOCKET)
-        return 0;
-
-    server.sin_family = AF_INET;
-    server.sin_port = htons(SERVER_PORT);
-    server.sin_addr.s_addr = inet_addr(ip);
-
-    if (connect(nc->sock, (struct sockaddr *)&server, sizeof(server)) < 0)
-    {
-        closesocket(nc->sock);
-        nc->sock = INVALID_SOCKET;
-        return 0;
-    }
-
-    return 1;
-}
-
 /*
- * Establece conexion con el host actual. En modo punto a punto, si el host
- * soy yo arranco el servidor embebido; si el host no responde, avanzo al
- * siguiente equipo y reintento (eleccion de host).
+ * Calcula, de forma deterministica, el id del siguiente host a partir del id
+ * del host caido: el siguiente id ACTIVO (conectado AHORA, no solo alguna vez
+ * registrado) en el anillo 1->2->3->4->1, saltando ids vacios y excluyendo
+ * siempre al host caido. Todos los clientes parten del mismo roster y del
+ * mismo fallenHostId, asi que todos llegan al mismo resultado sin
+ * coordinarse por red.
+ *
+ * Recibe el roster por puntero NO const porque marca al host caido como
+ * inactivo localmente: en una caida brusca (TCP muerto sin snapshot final)
+ * el ultimo roster recibido todavia puede traer slotActive[fallenHostId]=1,
+ * y sin esta correccion el host caido podria "auto-elegirse" de nuevo.
+ *
+ * Devuelve 0 si no queda ningun candidato (no hay sesion posible).
  */
-static int establishConnection(NetClient *nc)
+static int computeNextHostAmongActive(int fallenHostId, SessionRoster *roster)
 {
-    /* Modo cliente puro: una sola IP, sin migracion. */
-    if (nc->peerCount <= 1)
+    if (fallenHostId >= 1 && fallenHostId <= MAX_PACKET_PLAYERS)
+        roster->slotActive[fallenHostId - 1] = 0;
+
+    for (int step = 1; step <= MAX_PACKET_PLAYERS; step++)
     {
-        if (doConnect(nc, nc->peers[0]))
-        {
-            printf("[CLIENTE] Conectado a %s como jugador %d\n",
-                   nc->peers[0], nc->myId);
-            fflush(stdout);
-            return 1;
-        }
-        printf("[CLIENTE] No se pudo conectar a %s\n", nc->peers[0]);
-        return 0;
-    }
+        int id = ((fallenHostId - 1 + step) % MAX_PACKET_PLAYERS) + 1;
 
-    /* Modo punto a punto: probamos hosts hasta encontrar uno (o ser host). */
-    for (int intentos = 0; intentos < nc->peerCount; intentos++)
-    {
-        int hostId = nc->currentHostId;
-        if (hostId < 1 || hostId > nc->peerCount)
-            hostId = 1;
-        nc->currentHostId = hostId;
+        if (id == fallenHostId)
+            continue;
 
-        if (hostId == nc->myId)
-        {
-            /* Me toca ser host: arranco el servidor embebido (si no esta ya). */
-            if (!nc->hosting)
-            {
-                if (serverStart())
-                {
-                    nc->hosting = 1;
-                    printf("[HOST] Este equipo (jugador %d) ahora es el HOST\n",
-                           nc->myId);
-                    fflush(stdout);
-                    thread_sleep_ms(300); /* dar tiempo al listen() */
-                }
-            }
+        if (!roster->slotActive[id - 1])
+            continue;
 
-            if (nc->hosting && doConnect(nc, "127.0.0.1"))
-            {
-                printf("[CLIENTE] Conectado a mi propio servidor\n");
-                fflush(stdout);
-                return 1;
-            }
-        }
-        else
-        {
-            if (doConnect(nc, nc->peers[hostId - 1]))
-            {
-                printf("[CLIENTE] Conectado al host (jugador %d, %s)\n",
-                       hostId, nc->peers[hostId - 1]);
-                fflush(stdout);
-                return 1;
-            }
-        }
+        if (roster->ips[id - 1][0] == '\0')
+            continue;
 
-        /* Ese host no respondio: pasamos al siguiente equipo. */
-        thread_sleep_ms(500);
-        nc->currentHostId++;
-        if (nc->currentHostId > nc->peerCount)
-            nc->currentHostId = 1;
+        return id;
     }
 
     return 0;
 }
 
-NetClient *netConnect(const char *peers[], int peerCount, int myId, GameState *game)
+/*
+ * Intento de conexion inicial (al arrancar el programa). Puede bloquear con
+ * reintentos acotados: en este punto todavia no hay bucle SDL que congelar.
+ */
+static int initialConnect(NetClient *nc)
+{
+    const int maxAttempts = 20;
+    const int retryDelayMs = 1000;
+
+    for (int attempt = 1; attempt <= maxAttempts && nc->running; attempt++)
+    {
+        if (nc->isSessionHost)
+        {
+            if (!nc->hosting)
+            {
+                if (serverStartWithRoster(NULL))
+                {
+                    nc->hosting = 1;
+                    printf("[HOST] Sesion creada. Este equipo es el HOST.\n");
+                    fflush(stdout);
+                    thread_sleep_ms(500); /* dar tiempo al bind()/listen() local */
+                }
+                else
+                {
+                    printf("[HOST] No se pudo arrancar el servidor (puerto %d ocupado?)\n",
+                           SERVER_PORT);
+                    fflush(stdout);
+                    return 0; /* fallo irrecuperable: no insistir */
+                }
+            }
+
+            if (doConnect(nc, "127.0.0.1") && doHandshake(nc))
+            {
+                strncpy(nc->hostIp, "127.0.0.1", sizeof(nc->hostIp) - 1);
+                return 1;
+            }
+        }
+        else
+        {
+            printf("[CLIENTE] Conectando a %s... (intento %d/%d)\n",
+                   nc->hostIp, attempt, maxAttempts);
+            fflush(stdout);
+
+            if (doConnect(nc, nc->hostIp) && doHandshake(nc))
+                return 1;
+        }
+
+        thread_sleep_ms(retryDelayMs);
+    }
+
+    return 0;
+}
+
+NetClient *netConnect(const char *hostIp, int isSessionHost, GameState *game)
 {
 #ifdef _WIN32
     WSADATA wsa;
@@ -225,33 +311,28 @@ NetClient *netConnect(const char *peers[], int peerCount, int myId, GameState *g
     }
 #endif
 
-    if (peerCount < 1)
-        peerCount = 1;
-    if (peerCount > MAX_PEERS)
-        peerCount = MAX_PEERS;
-
     NetClient *nc = (NetClient *)malloc(sizeof(NetClient));
     if (nc == NULL)
         return NULL;
 
-    nc->myId = myId;
+    nc->myId = 0;
     nc->game = game;
     nc->running = 1;
-    nc->connected = 1;
-    nc->peerCount = peerCount;
-    nc->currentHostId = 1; /* el host inicial es el equipo 1 */
+    nc->connected = 0;
+    nc->isSessionHost = isSessionHost;
     nc->hosting = 0;
     nc->sock = INVALID_SOCKET;
+    nc->state = NET_STATE_RECONNECTING;
+    nc->receiverThreadActive = 0;
+    nc->reconnectThreadRunning = 0;
+    memset(&nc->roster, 0, sizeof(nc->roster));
 
-    for (int i = 0; i < peerCount; i++)
-    {
-        strncpy(nc->peers[i], peers[i], sizeof(nc->peers[i]) - 1);
-        nc->peers[i][sizeof(nc->peers[i]) - 1] = '\0';
-    }
+    strncpy(nc->hostIp, hostIp, sizeof(nc->hostIp) - 1);
+    nc->hostIp[sizeof(nc->hostIp) - 1] = '\0';
 
     mutex_init(&nc->mutex);
 
-    if (!establishConnection(nc))
+    if (!initialConnect(nc))
     {
         mutex_destroy(&nc->mutex);
         free(nc);
@@ -267,63 +348,243 @@ NetClient *netConnect(const char *peers[], int peerCount, int myId, GameState *g
         return NULL;
     }
 
+    nc->receiverThreadActive = 1;
+    nc->connected = 1;
+    nc->state = NET_STATE_CONNECTED;
+
     return nc;
 }
 
-int netReconnect(NetClient *nc)
+int netGetMyId(NetClient *nc)
+{
+    return (nc != NULL) ? nc->myId : 0;
+}
+
+NetState netGetState(NetClient *nc)
 {
     if (nc == NULL)
-        return 0;
+        return NET_STATE_DISCONNECTED;
 
-    /* Cerramos el socket viejo primero: asi, si el hilo receptor sigue
-     * bloqueado en recv(), se desbloquea y podemos esperarlo sin trabarnos. */
+    NetState s;
+    mutex_lock(&nc->mutex);
+    s = nc->state;
+    mutex_unlock(&nc->mutex);
+    return s;
+}
+
+void netBeginReconnect(NetClient *nc)
+{
+    if (nc == NULL)
+        return;
+
+    mutex_lock(&nc->mutex);
+    int alreadyRunning = nc->reconnectThreadRunning;
+    if (!alreadyRunning)
+    {
+        nc->state = NET_STATE_RECONNECTING;
+        nc->reconnectThreadRunning = 1;
+    }
+    mutex_unlock(&nc->mutex);
+
+    if (alreadyRunning)
+        return;
+
+    if (!thread_create(&nc->reconnectThread, reconnectWorker, nc))
+    {
+        mutex_lock(&nc->mutex);
+        nc->state = NET_STATE_DISCONNECTED;
+        nc->reconnectThreadRunning = 0;
+        mutex_unlock(&nc->mutex);
+    }
+}
+
+int netPollReconnect(NetClient *nc)
+{
+    return netIsConnected(nc);
+}
+
+/*
+ * Trabajo de migracion, corre en un hilo aparte para no bloquear el bucle
+ * SDL. Cierra la conexion vieja, calcula el siguiente host (deterministico a
+ * partir del roster) y reintenta hasta conectar (o hasta que nc->running se
+ * apague por netDisconnect()).
+ */
+static THREAD_RET reconnectWorker(void *arg)
+{
+    NetClient *nc = (NetClient *)arg;
+    const int retryDelayMs = 1500;
+
     if (nc->sock != INVALID_SOCKET)
     {
+        socket_shutdown(nc->sock);
         closesocket(nc->sock);
         nc->sock = INVALID_SOCKET;
     }
 
-    thread_join(nc->receiver);
+    if (nc->receiverThreadActive)
+    {
+        thread_join(nc->receiver);
+        nc->receiverThreadActive = 0;
+    }
 
-    /* El host anterior cayo: el siguiente equipo toma el relevo. */
-    nc->currentHostId++;
-    if (nc->currentHostId > nc->peerCount)
-        nc->currentHostId = 1;
+    mutex_lock(&nc->mutex);
+    int fallenHostId = nc->roster.currentHostId;
+    SessionRoster migrationRoster = nc->roster; /* copia local: fija para todo este intento de migracion */
+    mutex_unlock(&nc->mutex);
 
-    printf("[MIGRACION] Buscando nuevo host a partir del jugador %d...\n",
-           nc->currentHostId);
+    int nextHostId = computeNextHostAmongActive(fallenHostId, &migrationRoster);
+
+    if (nextHostId == 0)
+    {
+        printf("[MIGRACION] No queda ningun jugador activo. Sesion terminada.\n");
+        fflush(stdout);
+
+        mutex_lock(&nc->mutex);
+        nc->roster = migrationRoster;
+        nc->connected = 0;
+        nc->state = NET_STATE_DISCONNECTED;
+        nc->reconnectThreadRunning = 0;
+        mutex_unlock(&nc->mutex);
+
+        return 0;
+    }
+
+    migrationRoster.currentHostId = nextHostId;
+
+    mutex_lock(&nc->mutex);
+    nc->roster = migrationRoster;
+    mutex_unlock(&nc->mutex);
+
+    int iAmHost = (nc->myId == nextHostId);
+
+    if (iAmHost)
+        printf("[MIGRACION] Soy el jugador %d: paso a ser el nuevo HOST.\n", nc->myId);
+    else
+        printf("[MIGRACION] Esperando al nuevo host: jugador %d.\n", nextHostId);
     fflush(stdout);
 
-    if (!establishConnection(nc))
+    int connected = 0;
+
+    while (nc->running && !connected)
     {
-        nc->connected = 0;
-        return 0;
+        if (iAmHost)
+        {
+            if (!nc->hosting)
+            {
+                if (serverStartWithRoster(&migrationRoster))
+                {
+                    nc->hosting = 1;
+                    printf("[HOST] Este equipo (jugador %d) ahora es el HOST\n", nc->myId);
+                    fflush(stdout);
+                    thread_sleep_ms(500); /* dar tiempo al bind()/listen() local */
+                }
+                else
+                {
+                    printf("[MIGRACION] Puerto %d ocupado, reintentando en %d ms...\n",
+                           SERVER_PORT, retryDelayMs);
+                    fflush(stdout);
+                }
+            }
+
+            if (nc->hosting && doConnect(nc, "127.0.0.1") && doHandshake(nc))
+            {
+                mutex_lock(&nc->mutex);
+                int confirmedHost = (nc->roster.currentHostId == nc->myId);
+                mutex_unlock(&nc->mutex);
+
+                if (!confirmedHost)
+                {
+                    printf("[MIGRACION] Aviso: el servidor local no confirmo a jugador %d como host\n",
+                           nc->myId);
+                    fflush(stdout);
+                }
+
+                strncpy(nc->hostIp, "127.0.0.1", sizeof(nc->hostIp) - 1);
+                connected = 1;
+                break;
+            }
+        }
+        else
+        {
+            if (nc->hosting)
+            {
+                /* Servidor arrancado por error en una carrera anterior: ya
+                 * no nos toca, lo apagamos. */
+                serverStop();
+                nc->hosting = 0;
+            }
+
+            char targetIp[64];
+            strncpy(targetIp, migrationRoster.ips[nextHostId - 1], sizeof(targetIp) - 1);
+            targetIp[sizeof(targetIp) - 1] = '\0';
+
+            if (targetIp[0] != '\0' && doConnect(nc, targetIp) && doHandshake(nc))
+            {
+                strncpy(nc->hostIp, targetIp, sizeof(nc->hostIp) - 1);
+                connected = 1;
+                break;
+            }
+
+            printf("[MIGRACION] Esperando al host elegido (jugador %d), reintentando en %d ms...\n",
+                   nextHostId, retryDelayMs);
+            fflush(stdout);
+        }
+
+        thread_sleep_ms(retryDelayMs);
     }
 
-    nc->connected = 1;
-
-    if (!thread_create(&nc->receiver, receiverThread, nc))
+    if (connected && thread_create(&nc->receiver, receiverThread, nc))
     {
+        nc->receiverThreadActive = 1;
+
+        mutex_lock(&nc->mutex);
+        nc->connected = 1;
+        nc->state = NET_STATE_CONNECTED;
+        nc->reconnectThreadRunning = 0;
+        mutex_unlock(&nc->mutex);
+
+        printf("[MIGRACION] Reconectado. Host actual: jugador %d\n", nextHostId);
+        fflush(stdout);
+    }
+    else
+    {
+        mutex_lock(&nc->mutex);
         nc->connected = 0;
-        return 0;
+        nc->state = NET_STATE_DISCONNECTED;
+        nc->reconnectThreadRunning = 0;
+        mutex_unlock(&nc->mutex);
+
+        if (nc->running)
+        {
+            printf("[MIGRACION] No hay ningun host disponible.\n");
+            fflush(stdout);
+        }
     }
 
-    return 1;
+    return 0;
 }
 
 void netSendLocalPlayer(NetClient *nc, GameState *game)
 {
-    if (nc == NULL || !nc->connected)
+    if (nc == NULL)
         return;
 
-    int index = nc->myId - 1;
+    mutex_lock(&nc->mutex);
+    int canSend = (nc->state == NET_STATE_CONNECTED);
+    int myId = nc->myId;
+    mutex_unlock(&nc->mutex);
+
+    if (!canSend)
+        return;
+
+    int index = myId - 1;
     if (index < 0 || index >= MAX_PLAYERS)
         return;
 
     PlayerPacket packet;
 
     mutex_lock(&nc->mutex);
-    packet.playerId = nc->myId;
+    packet.playerId = myId;
     packet.x = game->players[index].x;
     packet.y = game->players[index].y;
     packet.dirX = game->players[index].dirX;
@@ -373,7 +634,14 @@ int netIsConnected(NetClient *nc)
 
 int netCurrentHost(NetClient *nc)
 {
-    return (nc != NULL) ? nc->currentHostId : 0;
+    if (nc == NULL)
+        return 0;
+
+    int h;
+    mutex_lock(&nc->mutex);
+    h = nc->roster.currentHostId;
+    mutex_unlock(&nc->mutex);
+    return h;
 }
 
 void netDisconnect(NetClient *nc)
@@ -383,10 +651,24 @@ void netDisconnect(NetClient *nc)
 
     nc->running = 0;
 
-    if (nc->sock != INVALID_SOCKET)
-        closesocket(nc->sock); /* desbloquea el recv() del hilo receptor */
+    mutex_lock(&nc->mutex);
+    int reconnecting = nc->reconnectThreadRunning;
+    mutex_unlock(&nc->mutex);
 
-    thread_join(nc->receiver);
+    if (reconnecting)
+        thread_join(nc->reconnectThread);
+
+    if (nc->sock != INVALID_SOCKET)
+    {
+        socket_shutdown(nc->sock);
+        closesocket(nc->sock); /* desbloquea el recv() del hilo receptor */
+    }
+
+    if (nc->receiverThreadActive)
+    {
+        thread_join(nc->receiver);
+        nc->receiverThreadActive = 0;
+    }
 
     if (nc->hosting)
         serverStop();
