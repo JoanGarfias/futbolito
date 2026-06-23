@@ -214,7 +214,7 @@ static void drawPlayerSprite(SDL_Renderer *renderer, int i, SDL_Rect dst, int mo
     SDL_SetTextureColorMod(a.tex, 255, 255, 255);
 }
 
-/* ----- Funciones de ayuda para dibujar la cancha ----- */
+/* funciones de ayuda para dibujar la cancha */
 
 /* Contorno de circulo (algoritmo de punto medio). */
 static void drawCircleOutline(SDL_Renderer *r, int cx, int cy, int radius)
@@ -285,6 +285,31 @@ static void renderChat(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
 
     if (!game->chatOpen)
         renderText(renderer, font, "T: chat", SCREEN_WIDTH - 90, 10, gray);
+
+    /* Fondo negro semitransparente detras del historial + input, para que
+     * el texto se distinga de las lineas/cesped de la cancha. */
+    int activeMessages = 0;
+    for (int i = 0; i < CHAT_HISTORY; i++)
+        if (game->chatLog[i].playerId > 0)
+            activeMessages++;
+
+    int logHeight = activeMessages * 22;
+    int inputHeight = game->chatOpen ? 30 : 0;
+    int contentHeight = logHeight + inputHeight;
+
+    if (contentHeight > 0)
+    {
+        SDL_Rect panel = {10, SCREEN_HEIGHT - 14 - contentHeight, 380, contentHeight + 10};
+
+        SDL_BlendMode prevMode;
+        SDL_GetRenderDrawBlendMode(renderer, &prevMode);
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 150);
+        SDL_RenderFillRect(renderer, &panel);
+
+        SDL_SetRenderDrawBlendMode(renderer, prevMode);
+    }
 
     int y = SCREEN_HEIGHT - 30;
 
@@ -515,4 +540,34 @@ void renderReconnectOverlay(SDL_Renderer *renderer, TTF_Font *font)
     SDL_Color white = {255, 255, 255, 255};
     renderText(renderer, font, "Reconectando...",
                SCREEN_WIDTH / 2 - 80, SCREEN_HEIGHT / 2 - 12, white);
+}
+
+/* Menu de pausa (Continuar/Salir), mismo estilo que renderReconnectOverlay.
+ * Dibujar despues de renderGame() y antes del SDL_RenderPresent(). */
+void renderPauseMenu(SDL_Renderer *renderer, TTF_Font *font, int selected)
+{
+    SDL_BlendMode prevMode;
+    SDL_GetRenderDrawBlendMode(renderer, &prevMode);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+    SDL_Rect panel = {SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 70, 300, 140};
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
+    SDL_RenderFillRect(renderer, &panel);
+
+    SDL_SetRenderDrawBlendMode(renderer, prevMode);
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderDrawRect(renderer, &panel);
+
+    SDL_Color white = {255, 255, 255, 255};
+
+    renderText(renderer, font, "PAUSA", panel.x + 105, panel.y + 15, white);
+
+    char continuar[20];
+    char salir[20];
+    snprintf(continuar, sizeof(continuar), "%sContinuar", (selected == 0) ? "> " : "  ");
+    snprintf(salir, sizeof(salir), "%sSalir", (selected == 1) ? "> " : "  ");
+
+    renderText(renderer, font, continuar, panel.x + 60, panel.y + 60, white);
+    renderText(renderer, font, salir, panel.x + 60, panel.y + 95, white);
 }

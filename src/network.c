@@ -1,19 +1,10 @@
-/*
- * CLIENTE de red del Futbolito (con migracion de host automatica).
+/* Cliente de red, con migracion de host automatica.
  *
- * - Abre UNA conexion TCP persistente al host actual, con un handshake
- *   (JoinRequest/JoinResponse) que asigna el id de jugador y entrega el
- *   roster de la sesion (ver network_packet.h).
- * - Lanza un HILO RECEPTOR que lee en bucle el estado del juego (con el
- *   roster embebido) y lo escribe en el GameState/roster compartidos.
- * - El hilo principal (SDL) escribe la posicion del jugador local y dibuja.
- * - Si el host se cae, un HILO DE RECONEXION en segundo plano elige al
- *   siguiente equipo segun el roster y se reconecta, sin bloquear el bucle
- *   SDL. Si el elegido es este mismo equipo, arranca el servidor embebido.
- *
- * Como varios hilos tocan el mismo GameState/NetClient, todo acceso se
- * protege con un mutex (SECCION CRITICA). Usa APIs nativas via threads.h.
- */
+ * Abre una conexion TCP al host actual (con handshake de JoinRequest/
+ * JoinResponse que nos da el id y el roster), lanza un hilo receptor que
+ * va leyendo el estado del juego, y si el host se cae arranca un hilo de
+ * reconexion en segundo plano para no trabar el bucle de SDL. El mutex de
+ * NetClient protege todo lo que tocan estos hilos a la vez. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,7 +31,7 @@
 
 #define SERVER_PORT 5000
 
-/* Definicion real del tipo opaco NetClient. REAL*/
+/* aqui esta la definicion real del struct opaco */
 struct NetClient
 {
     SOCKET sock;
@@ -91,12 +82,9 @@ static int doConnect(NetClient *nc, const char *ip)
     return 1;
 }
 
-/*
- * Handshake de aplicacion sobre la conexion TCP ya abierta: pedimos un id
- * (preferredId = nc->myId, 0 la primera vez) y el servidor nos responde con
- * el id asignado y el roster completo de la sesion. Si el servidor rechaza
- * (sala llena) o falla el intercambio, cierra el socket y devuelve 0.
- */
+/* Pedimos un id (0 la primera vez) y el server responde con el id que nos
+ * toco y el roster completo. Si rechaza (sala llena) o falla, cierra el
+ * socket y devuelve 0. */
 static int doHandshake(NetClient *nc)
 {
     JoinRequestPacket req;
@@ -140,13 +128,9 @@ static int doHandshake(NetClient *nc)
     return 1;
 }
 
-/*
- * HILO RECEPTOR.
- * Lee paquetes de estado del servidor (con el roster embebido) y los vuelca
- * al GameState/roster compartidos, siempre dentro de la seccion critica. No
- * sobreescribe la posicion del jugador local (esa la controla el input del
- * hilo principal).
- */
+/* Va leyendo snapshots del servidor y los vuelca al GameState/roster
+ * compartidos. No toca la posicion del jugador local, esa la maneja el
+ * input del hilo principal. */
 static THREAD_RET receiverThread(void *arg)
 {
     NetClient *nc = (NetClient *)arg;
@@ -168,7 +152,7 @@ static THREAD_RET receiverThread(void *arg)
         if (received != (int)sizeof(GamePacket))
             continue;
 
-        mutex_lock(&nc->mutex); /* ---- entra a seccion critica ---- */
+        mutex_lock(&nc->mutex);
 
         for (int i = 0; i < MAX_PLAYERS; i++)
         {
@@ -200,29 +184,22 @@ static THREAD_RET receiverThread(void *arg)
             nc->game->chatLog[i].text[CHAT_MAX_LEN - 1] = '\0';
         }
 
-        nc->roster = state.roster; /* roster sincronizado en cada snapshot */
+        nc->roster = state.roster;
 
-        mutex_unlock(&nc->mutex); /* ---- sale de seccion critica ---- */
+        mutex_unlock(&nc->mutex);
     }
 
     return 0;
 }
 
-/*
- * Calcula, de forma deterministica, el id del siguiente host a partir del id
- * del host caido: el siguiente id ACTIVO (conectado AHORA, no solo alguna vez
- * registrado) en el anillo 1->2->3->4->1, saltando ids vacios y excluyendo
- * siempre al host caido. Todos los clientes parten del mismo roster y del
- * mismo fallenHostId, asi que todos llegan al mismo resultado sin
- * coordinarse por red.
+/* Busca el siguiente id ACTIVO en el anillo 1->2->3->4->1 a partir del host
+ * caido (saltando ids vacios). Como todos parten del mismo roster, a todos
+ * les da el mismo resultado sin tener que avisarse por red.
  *
- * Recibe el roster por puntero NO const porque marca al host caido como
- * inactivo localmente: en una caida brusca (TCP muerto sin snapshot final)
- * el ultimo roster recibido todavia puede traer slotActive[fallenHostId]=1,
- * y sin esta correccion el host caido podria "auto-elegirse" de nuevo.
- *
- * Devuelve 0 si no queda ningun candidato (no hay sesion posible).
- */
+ * roster no es const porque aqui mismo marcamos al host caido como inactivo:
+ * si la caida fue brusca (socket muerto sin snapshot final) el roster
+ * todavia puede traerlo como activo, y se auto-elegiria de nuevo si no lo
+ * corregimos. Devuelve 0 si ya no queda nadie. */
 static int computeNextHostAmongActive(int fallenHostId, SessionRoster *roster)
 {
     if (fallenHostId >= 1 && fallenHostId <= MAX_PACKET_PLAYERS)
@@ -247,10 +224,8 @@ static int computeNextHostAmongActive(int fallenHostId, SessionRoster *roster)
     return 0;
 }
 
-/*
- * Intento de conexion inicial (al arrancar el programa). Puede bloquear con
- * reintentos acotados: en este punto todavia no hay bucle SDL que congelar.
- */
+/* Intento inicial al arrancar el programa. Aqui si puede bloquear con
+ * reintentos: todavia no hay bucle de SDL que se congele. */
 static int initialConnect(NetClient *nc)
 {
     const int maxAttempts = 20;
@@ -403,12 +378,9 @@ int netPollReconnect(NetClient *nc)
     return netIsConnected(nc);
 }
 
-/*
- * Trabajo de migracion, corre en un hilo aparte para no bloquear el bucle
- * SDL. Cierra la conexion vieja, calcula el siguiente host (deterministico a
- * partir del roster) y reintenta hasta conectar (o hasta que nc->running se
- * apague por netDisconnect()).
- */
+/* Corre en su propio hilo para no bloquear SDL: cierra la conexion vieja,
+ * calcula el siguiente host y reintenta hasta conectar (o hasta que
+ * netDisconnect() apague nc->running). */
 static THREAD_RET reconnectWorker(void *arg)
 {
     NetClient *nc = (NetClient *)arg;

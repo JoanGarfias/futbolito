@@ -1,11 +1,6 @@
-/*
- * Programa servidor independiente (futbolito_server).
- *
- * Solo arranca el modulo servidor y se queda vivo. Util cuando un equipo se
- * dedica a ser el host fijo. Para la version "punto a punto" con migracion de
- * host, el propio cliente embebe este mismo modulo (ver src/server.c y
- * src/network.c).
- */
+/* futbolito_server: arranca el servidor y se queda vivo, para cuando un
+ * equipo quiere ser host fijo. En modo punto a punto el cliente ya trae
+ * este mismo modulo embebido (ver server.c / network.c). */
 
 #include <stdio.h>
 

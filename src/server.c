@@ -1,21 +1,9 @@
-/*
- * SERVIDOR AUTORITATIVO MULTIHILO de Futbolito (modulo reutilizable).
- *
- * Arquitectura Cliente/Servidor sobre sockets TCP, con paralelismo
- * multihilo sincronizado por una SECCION CRITICA con mutex:
- *
- *   - 1 hilo que acepta conexiones (acceptThread)
- *   - 1 hilo por cada cliente conectado (clientThread)
- *   - 1 hilo de fisica ~60 fps (physicsThread)
- *
- * Todos esos hilos LEEN y ESCRIBEN sobre el mismo GameState compartido. Sin el
- * mutex habria condicion de carrera; por eso cada acceso al estado se hace
- * dentro de mutex_lock()/mutex_unlock() (la seccion critica). El mismo mutex
- * protege el roster (SessionRoster): quien tiene cada id de jugador.
- *
- * Compila igual en Windows (Winsock + CreateThread + CRITICAL_SECTION) y en
- * Linux (sockets BSD + pthread_create + pthread_mutex_t) gracias a threads.h.
- */
+/* Servidor autoritativo del Futbolito. Tres hilos corriendo a la vez:
+ * acceptThread (acepta conexiones), un clientThread por cada jugador
+ * conectado, y physicsThread (fisica a ~60 fps). Todos leen/escriben el
+ * mismo GameState y el roster, por eso van protegidos con server.mutex
+ * (si no, condicion de carrera). threads.h se encarga de que esto compile
+ * igual en Windows y en Linux. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,17 +96,10 @@ static int countSlotUsed(void)
     return n;
 }
 
-/*
- * Asigna el id de jugador (1..4) para una conexion nueva. Debe llamarse con
- * server.mutex ya tomado. Reglas, en orden:
- *   1) preferredId valido y libre  -> se lo devolvemos tal cual (rejoin
- *      explicito: el propio proceso recuerda su id, o el host se reconecta a
- *      si mismo por 127.0.0.1 tras la migracion).
- *   2) Un slot ya registrado con la MISMA IP, actualmente libre -> recupera
- *      su id anterior (rejoin tras cerrar y reabrir el cliente).
- *   3) El primer slot libre disponible.
- * Devuelve 0 si no hay cupo (sala llena).
- */
+/* Decide que id (1..4) le toca a una conexion nueva. Llamar con server.mutex
+ * ya tomado. Primero respeta el preferredId si esta libre (rejoin explicito),
+ * luego intenta recuperar un slot viejo con la misma IP, y si no hay nada de
+ * eso agarra el primer slot libre. 0 si ya no hay cupo. */
 static int assignPlayerId(int preferredId, const char *remoteIp)
 {
     if (preferredId >= 1 && preferredId <= MAX_PACKET_PLAYERS &&
@@ -139,11 +120,7 @@ static int assignPlayerId(int preferredId, const char *remoteIp)
     return 0;
 }
 
-/*
- * HILO DE FISICA.
- * Cada tick entra a la seccion critica para actualizar la pelota, resolver
- * colisiones y goles sobre el estado compartido, y vuelve a salir.
- */
+/* Cada tick entra al mutex, actualiza pelota/colisiones/goles, y sale. */
 static THREAD_RET physicsThread(void *arg)
 {
     (void)arg;
@@ -156,7 +133,7 @@ static THREAD_RET physicsThread(void *arg)
         int activeCount = 0;
         float bx = 0, by = 0;
 
-        mutex_lock(&server.mutex); /* ---- entra a seccion critica ---- */
+        mutex_lock(&server.mutex);
 
         updatePhysics(&server.game);
 
@@ -185,7 +162,7 @@ static THREAD_RET physicsThread(void *arg)
         bx = server.game.ball.x;
         by = server.game.ball.y;
 
-        mutex_unlock(&server.mutex); /* ---- sale de seccion critica ---- */
+        mutex_unlock(&server.mutex);
 
         tick++;
         if (tick % 60 == 0) /* una vez por segundo */
@@ -201,13 +178,9 @@ static THREAD_RET physicsThread(void *arg)
     return 0;
 }
 
-/*
- * HILO POR CLIENTE.
- * Primero hace el handshake (JoinRequest/JoinResponse) para asignar el id de
- * jugador; despues recibe en bucle la posicion del jugador (conexion
- * persistente), la escribe en el estado compartido bajo el mutex, toma una
- * "foto" del estado (con el roster) y se la devuelve al cliente.
- */
+/* Uno de estos por cliente. Primero el handshake para asignarle el id,
+ * despues queda en bucle: recibe su posicion, la guarda bajo el mutex,
+ * arma el snapshot (con roster y todo) y se lo regresa. */
 static THREAD_RET clientThread(void *arg)
 {
     ClientConn *conn = (ClientConn *)arg;
@@ -226,7 +199,7 @@ static THREAD_RET clientThread(void *arg)
         return 0;
     }
 
-    mutex_lock(&server.mutex); /* ---- entra a seccion critica ---- */
+    mutex_lock(&server.mutex);
 
     int assignedId = assignPlayerId(joinReq.preferredId, remoteIp);
 
@@ -254,7 +227,7 @@ static THREAD_RET clientThread(void *arg)
     joinResp.assignedId = assignedId;
     joinResp.roster = server.roster;
 
-    mutex_unlock(&server.mutex); /* ---- sale de seccion critica ---- */
+    mutex_unlock(&server.mutex);
 
     if (assignedId == 0)
     {
@@ -303,10 +276,10 @@ static THREAD_RET clientThread(void *arg)
             fflush(stdout);
         }
 
-        mutex_lock(&server.mutex); /* ---- entra a seccion critica ---- */
+        mutex_lock(&server.mutex);
 
-        /* El id de este socket lo decidio el handshake, no lo que mande el
-         * cliente en cada paquete (packet.playerId se ignora a proposito). */
+        /* el id de este socket ya lo fijo el handshake; packet.playerId se
+         * ignora a proposito, no confiamos en lo que mande el cliente */
         Player *p = &server.game.players[myIndex];
         p->prevX = packet.x;
         p->prevY = packet.y;
@@ -333,7 +306,7 @@ static THREAD_RET clientThread(void *arg)
 
         buildSnapshot(&snapshot, &server.game);
 
-        mutex_unlock(&server.mutex); /* ---- sale de seccion critica ---- */
+        mutex_unlock(&server.mutex);
 
         if (send(clientSocket, (char *)&snapshot, sizeof(GamePacket), 0) <= 0)
             break;
@@ -355,10 +328,7 @@ static THREAD_RET clientThread(void *arg)
     return 0;
 }
 
-/*
- * HILO QUE ACEPTA CONEXIONES.
- * Por cada cliente nuevo lanza un clientThread (conexion TCP persistente).
- */
+/* Por cada cliente nuevo, lanza su clientThread. */
 static THREAD_RET acceptThread(void *arg)
 {
     (void)arg;
@@ -413,18 +383,14 @@ int serverStartWithRoster(const SessionRoster *roster)
     }
 #endif
 
-    /* Estado inicial: campo armado pero TODOS los jugadores inactivos
-     * hasta que cada cliente se conecte (incluso si el roster trae IPs
-     * precargadas de una sesion anterior: el partido siempre arranca de
-     * cero con initGame(), solo se recuerdan los ids/IPs). */
+    /* el partido siempre arranca de cero, todos inactivos hasta que cada
+     * cliente se conecte (aunque el roster ya traiga IPs de antes) */
     initGame(&server.game);
     for (int i = 0; i < MAX_PLAYERS; i++)
         server.game.players[i].active = 0;
 
-    /* Si viene de una migracion, el roster ya trae slotActive corregido (el
-     * host caido marcado inactivo, ver computeNextHostAmongActive en
-     * network.c) y currentHostId = este equipo. Se copia tal cual: cada
-     * jugador reconfirma su slotActive al rehacer el handshake. */
+    /* si viene de una migracion el roster ya trae slotActive corregido (ver
+     * computeNextHostAmongActive en network.c), se copia tal cual */
     if (roster != NULL)
         server.roster = *roster;
     else

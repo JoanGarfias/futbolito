@@ -11,7 +11,7 @@ Es un juego de futbolito multijugador para hasta 4 personas en red local. Cada q
 - Orlando Cabrera Jimenez
 - Joan Pablo Alvarado Garfias
 
-## 🛠️ ¿Qué tecnologías usamos? (Lo mero bueno de la materia)
+## 🛠️ ¿Qué tecnologías usamos?
 
 Para cumplir con los requisitos del profe y no usar "magia negra" (librerías externas de red o hilos de terceros), programamos todo usando las APIs nativas de cada sistema operativo:
 
@@ -30,7 +30,6 @@ La estructura está sencillita para no perdernos entre tantos archivos:
 include/   cabeceras (.h)  -> threads.h hace el paro de unificar los hilos y mutexes nativos de Windows y Linux
 src/       código (.c)     -> server.c (servidor), network.c (cliente), physics.c (físicas), render.c (dibujado)...
 assets/    fuentes y sprites del juego
-docs/      guion del video y el cartel para la presentación
 ```
 
 ## 💻 Cómo compilar y hacerlo jalar

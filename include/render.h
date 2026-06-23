@@ -5,22 +5,19 @@
 #include <SDL2/SDL_ttf.h>
 #include "game.h"
 
-/* Carga los sprites (BMP) de jugadores y pelota. Si un archivo no existe,
- * ese elemento se dibujara con su color solido de respaldo. Llamar una vez
- * despues de crear el renderer. */
+/* Si falta algun BMP, ese elemento se dibuja con su color solido de
+ * respaldo. Llamar una vez despues de crear el renderer. */
 void loadSprites(SDL_Renderer *renderer);
-
-/* Libera las texturas de los sprites. Llamar antes de cerrar SDL. */
 void freeSprites(void);
 
-/* Dibuja el frame del juego. NO presenta (no llama SDL_RenderPresent): el
- * llamador decide cuando presentar, para poder dibujar encima un overlay
- * (p.ej. "Reconectando...") antes del present. */
+void renderText(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color);
+
+/* No llama SDL_RenderPresent: el caller decide cuando presentar, para poder
+ * dibujar overlays (reconectando, pausa...) encima primero. */
 void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game);
 
-/* Overlay semitransparente con texto centrado, para mostrar mientras se
- * espera la migracion de host. Dibujar despues de renderGame() y antes del
- * SDL_RenderPresent(). */
+/* Estos dos van despues de renderGame() y antes del present. */
 void renderReconnectOverlay(SDL_Renderer *renderer, TTF_Font *font);
+void renderPauseMenu(SDL_Renderer *renderer, TTF_Font *font, int selected);
 
 #endif

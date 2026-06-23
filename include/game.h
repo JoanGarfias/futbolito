@@ -5,17 +5,14 @@
 #include "ball.h"
 
 #define MAX_PLAYERS 4
-
-/* Goles necesarios para ganar la partida. */
 #define GOALS_TO_WIN 5
 
-/* Chat de texto: se abre con la tecla T. */
 #define CHAT_MAX_LEN 48
 #define CHAT_HISTORY 4
 
 typedef struct
 {
-    int playerId; /* 0 = entrada vacia */
+    int playerId; /* 0 = vacio */
     char text[CHAT_MAX_LEN];
 } ChatMessage;
 
@@ -23,19 +20,18 @@ typedef struct
 {
     int running;
     int score[MAX_PLAYERS];
-    int winner; /* -1 si nadie ha ganado; si no, indice del jugador ganador */
+    int winner; /* -1 si nadie ha ganado todavia */
 
     Player players[MAX_PLAYERS];
     Ball ball;
 
-    /* Chat: historial recibido del host (mas nuevo primero). */
-    ChatMessage chatLog[CHAT_HISTORY];
+    ChatMessage chatLog[CHAT_HISTORY]; /* historial recibido del host, mas nuevo primero */
 
-    /* Chat: estado LOCAL de la caja de texto (no lo toca el hilo receptor). */
-    int chatOpen;                 /* 1 mientras se esta escribiendo (tecla T) */
-    char chatInput[CHAT_MAX_LEN]; /* texto que se va escribiendo */
-    char pendingChatMsg[CHAT_MAX_LEN]; /* listo para viajar en el proximo envio */
-    int localChatSeq;             /* sube cada vez que se envia un mensaje */
+    /* caja de chat local (tecla T); el hilo receptor no toca estos campos */
+    int chatOpen;
+    char chatInput[CHAT_MAX_LEN];
+    char pendingChatMsg[CHAT_MAX_LEN]; /* listo para salir en el proximo envio */
+    int localChatSeq;                  /* sube con cada mensaje nuevo */
 
 } GameState;
 

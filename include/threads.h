@@ -1,21 +1,14 @@
 #ifndef THREADS_H
 #define THREADS_H
 
-/*
- * Capa de abstraccion MULTIHILO usando APIs NATIVAS de cada SO:
- *
- *   - Windows : CRITICAL_SECTION + CreateThread   (windows.h)
- *   - Linux   : pthread_mutex_t  + pthread_create (pthread.h)
- *
- * No se usa ninguna libreria de terceros: cada rama del #ifdef llama
- * directamente a la API nativa del sistema operativo. Asi el mecanismo de
- * SECCION CRITICA con mutex queda implementado de forma nativa en ambos SO.
- */
+/* Wrapper de hilos/mutex para no llenar el resto del codigo de #ifdef.
+ * Windows usa CreateThread + CRITICAL_SECTION, Linux usa pthreads. Sin
+ * librerias externas, solo lo nativo de cada SO. */
 
 #ifdef _WIN32
 
-/* En Windows winsock2.h DEBE incluirse antes que windows.h para evitar
- * el conflicto con el viejo winsock.h. Lo garantizamos aqui. */
+/* ojo: winsock2.h tiene que ir ANTES que windows.h, si no truena con el
+ * winsock viejo que windows.h mete por su cuenta */
 #include <winsock2.h>
 #include <windows.h>
 
@@ -38,8 +31,6 @@ typedef pthread_t Thread;
 
 typedef THREAD_RET (*ThreadFunc)(void *);
 
-/* ----------------------- MUTEX (seccion critica) ----------------------- */
-
 static inline void mutex_init(Mutex *m)
 {
 #ifdef _WIN32
@@ -49,7 +40,6 @@ static inline void mutex_init(Mutex *m)
 #endif
 }
 
-/* Entra a la SECCION CRITICA: bloquea el mutex. */
 static inline void mutex_lock(Mutex *m)
 {
 #ifdef _WIN32
@@ -59,7 +49,6 @@ static inline void mutex_lock(Mutex *m)
 #endif
 }
 
-/* Sale de la SECCION CRITICA: libera el mutex. */
 static inline void mutex_unlock(Mutex *m)
 {
 #ifdef _WIN32
@@ -78,9 +67,7 @@ static inline void mutex_destroy(Mutex *m)
 #endif
 }
 
-/* --------------------------- HILOS (threads) --------------------------- */
-
-/* Crea un hilo nativo. Devuelve 1 en exito, 0 en error. */
+/* 1 si pudo crear el hilo, 0 si fallo */
 static inline int thread_create(Thread *t, ThreadFunc func, void *arg)
 {
 #ifdef _WIN32
@@ -101,8 +88,8 @@ static inline void thread_join(Thread t)
 #endif
 }
 
-/* Suelta un hilo que no vamos a esperar con join (ej. el hilo de cada
- * cliente del servidor), para que el SO libere sus recursos al terminar. */
+/* para hilos que no vamos a esperar con join (los de cada cliente del
+ * servidor), asi el SO libera los recursos solo al terminar */
 static inline void thread_detach(Thread t)
 {
 #ifdef _WIN32
@@ -112,7 +99,6 @@ static inline void thread_detach(Thread t)
 #endif
 }
 
-/* Pausa el hilo actual la cantidad de milisegundos indicada. */
 static inline void thread_sleep_ms(int ms)
 {
 #ifdef _WIN32

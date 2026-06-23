@@ -14,6 +14,7 @@ src/player.c \
 src/input.c \
 src/ball.c \
 src/render.c \
+src/menu.c \
 src/network.c \
 src/server.c \
 src/physics.c
