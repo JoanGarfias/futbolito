@@ -119,7 +119,12 @@ int main(int argc, char *argv[])
             if (event.type == SDL_QUIT)
                 game.running = 0;
 
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
+            /* Si el chat ya estaba abierto, Esc lo cierra (no cierra el juego). */
+            int chatWasOpen = game.chatOpen;
+
+            handleChatEvent(&game, &event);
+
+            if (!chatWasOpen && event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
                 game.running = 0;
         }
 

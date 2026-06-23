@@ -106,6 +106,13 @@ static THREAD_RET receiverThread(void *arg)
 
         nc->game->winner = state.winner;
 
+        for (int i = 0; i < CHAT_HISTORY; i++)
+        {
+            nc->game->chatLog[i].playerId = state.chat[i].playerId;
+            strncpy(nc->game->chatLog[i].text, state.chat[i].text, CHAT_MAX_LEN - 1);
+            nc->game->chatLog[i].text[CHAT_MAX_LEN - 1] = '\0';
+        }
+
         mutex_unlock(&nc->mutex); /* ---- sale de seccion critica ---- */
     }
 
@@ -322,6 +329,14 @@ void netSendLocalPlayer(NetClient *nc, GameState *game)
     packet.dirX = game->players[index].dirX;
     packet.dirY = game->players[index].dirY;
     packet.active = 1;
+
+    /* Chat: viaja el mensaje pendiente (si hay uno) y se limpia para no
+     * reenviarlo; chatSeq queda igual hasta el proximo mensaje, asi el host
+     * sabe que ya lo vio aunque el texto venga vacio. */
+    strncpy(packet.chatMsg, game->pendingChatMsg, CHAT_MAX_LEN - 1);
+    packet.chatMsg[CHAT_MAX_LEN - 1] = '\0';
+    packet.chatSeq = game->localChatSeq;
+    game->pendingChatMsg[0] = '\0';
     mutex_unlock(&nc->mutex);
 
     if (send(nc->sock, (char *)&packet, sizeof(PlayerPacket), 0) <= 0)

@@ -27,4 +27,15 @@ void initGame(GameState *game)
     initPlayer(&game->players[3], 4, 485, 470); // abajo
 
     initBall(&game->ball, 490, 290);
+
+    for (int i = 0; i < CHAT_HISTORY; i++)
+    {
+        game->chatLog[i].playerId = 0;
+        game->chatLog[i].text[0] = '\0';
+    }
+
+    game->chatOpen = 0;
+    game->chatInput[0] = '\0';
+    game->pendingChatMsg[0] = '\0';
+    game->localChatSeq = 0;
 }

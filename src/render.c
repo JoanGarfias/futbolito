@@ -259,6 +259,50 @@ static void drawRect2(SDL_Renderer *r, SDL_Rect rect)
     SDL_RenderDrawRect(r, &inner);
 }
 
+/* Cuadro de chat: pista "T: chat" cuando esta cerrado, caja de texto cuando
+ * se esta escribiendo, y las ultimas lineas recibidas (mas nueva abajo). */
+static void renderChat(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
+{
+    SDL_Color white = {255, 255, 255, 255};
+    SDL_Color gray = {200, 200, 200, 255};
+
+    if (!game->chatOpen)
+        renderText(renderer, font, "T: chat", SCREEN_WIDTH - 90, 10, gray);
+
+    int y = SCREEN_HEIGHT - 30;
+
+    if (game->chatOpen)
+    {
+        SDL_Rect box = {15, y, 360, 26};
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
+        SDL_RenderFillRect(renderer, &box);
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(renderer, &box);
+
+        char line[CHAT_MAX_LEN + 2];
+        int blink = (SDL_GetTicks() / 500) % 2 == 0;
+        snprintf(line, sizeof(line), "%s%s", game->chatInput, blink ? "_" : "");
+
+        renderText(renderer, font, line, 20, y + 3, white);
+
+        y -= 26;
+    }
+
+    for (int i = 0; i < CHAT_HISTORY; i++)
+    {
+        if (game->chatLog[i].playerId <= 0)
+            continue;
+
+        char line[CHAT_MAX_LEN + 8];
+        snprintf(line, sizeof(line), "P%d: %s", game->chatLog[i].playerId, game->chatLog[i].text);
+
+        SDL_Color c = playerColor(game->chatLog[i].playerId - 1);
+        renderText(renderer, font, line, 20, y, c);
+
+        y -= 22;
+    }
+}
+
 void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
 {
     /* La primera vez, fijamos las posiciones previas para no detectar un
@@ -425,6 +469,8 @@ void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
         renderText(renderer, font, "Nueva partida en unos segundos...",
                    SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 + 5, white);
     }
+
+    renderChat(renderer, font, game);
 
     SDL_RenderPresent(renderer);
 }

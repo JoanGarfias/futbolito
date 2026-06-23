@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <string.h>
 #include "../include/input.h"
 
 #define FIELD_LEFT 50
@@ -8,6 +9,10 @@
 
 void handleInput(GameState *game, int localPlayerId)
 {
+    /* Mientras se escribe en el chat, WASD no debe mover al jugador. */
+    if (game->chatOpen)
+        return;
+
     const Uint8 *keys = SDL_GetKeyboardState(NULL);
 
     int index = localPlayerId - 1;
@@ -73,4 +78,58 @@ void handleKeyDown(GameState *game, SDL_Keycode key)
 
     if (key == SDLK_4)
         game->players[3].active = !game->players[3].active;
+}
+
+void handleChatEvent(GameState *game, SDL_Event *event)
+{
+    if (!game->chatOpen)
+    {
+        if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_t)
+        {
+            game->chatOpen = 1;
+            game->chatInput[0] = '\0';
+            SDL_StartTextInput();
+        }
+        return;
+    }
+
+    if (event->type == SDL_TEXTINPUT)
+    {
+        size_t len = strlen(game->chatInput);
+        size_t add = strlen(event->text.text);
+
+        if (len + add < CHAT_MAX_LEN - 1)
+            strcat(game->chatInput, event->text.text);
+
+        return;
+    }
+
+    if (event->type != SDL_KEYDOWN)
+        return;
+
+    if (event->key.keysym.sym == SDLK_BACKSPACE)
+    {
+        size_t len = strlen(game->chatInput);
+        if (len > 0)
+            game->chatInput[len - 1] = '\0';
+    }
+    else if (event->key.keysym.sym == SDLK_RETURN || event->key.keysym.sym == SDLK_KP_ENTER)
+    {
+        if (game->chatInput[0] != '\0')
+        {
+            strncpy(game->pendingChatMsg, game->chatInput, CHAT_MAX_LEN - 1);
+            game->pendingChatMsg[CHAT_MAX_LEN - 1] = '\0';
+            game->localChatSeq++;
+        }
+
+        game->chatOpen = 0;
+        game->chatInput[0] = '\0';
+        SDL_StopTextInput();
+    }
+    else if (event->key.keysym.sym == SDLK_ESCAPE)
+    {
+        game->chatOpen = 0;
+        game->chatInput[0] = '\0';
+        SDL_StopTextInput();
+    }
 }

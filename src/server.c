@@ -77,6 +77,13 @@ static void buildSnapshot(GamePacket *out, const GameState *g)
     out->ball.vy = g->ball.vy;
     out->ball.size = g->ball.size;
     out->ball.lastPlayerTouched = g->ball.lastPlayerTouched;
+
+    for (int i = 0; i < CHAT_HISTORY; i++)
+    {
+        out->chat[i].playerId = g->chatLog[i].playerId;
+        strncpy(out->chat[i].text, g->chatLog[i].text, CHAT_MAX_LEN - 1);
+        out->chat[i].text[CHAT_MAX_LEN - 1] = '\0';
+    }
 }
 
 /*
@@ -156,6 +163,7 @@ static THREAD_RET clientThread(void *arg)
     GamePacket snapshot;
     int myIndex = -1;
     int recvCount = 0;
+    int lastChatSeq = 0; /* ultimo chatSeq de ESTE cliente ya procesado */
 
     while (server.running)
     {
@@ -192,6 +200,21 @@ static THREAD_RET clientThread(void *arg)
         p->dirX = packet.dirX;
         p->dirY = packet.dirY;
         p->active = 1;
+
+        if (packet.chatSeq != 0 && packet.chatSeq != lastChatSeq && packet.chatMsg[0] != '\0')
+        {
+            lastChatSeq = packet.chatSeq;
+
+            for (int c = CHAT_HISTORY - 1; c > 0; c--)
+                server.game.chatLog[c] = server.game.chatLog[c - 1];
+
+            server.game.chatLog[0].playerId = index + 1;
+            strncpy(server.game.chatLog[0].text, packet.chatMsg, CHAT_MAX_LEN - 1);
+            server.game.chatLog[0].text[CHAT_MAX_LEN - 1] = '\0';
+
+            printf("[CHAT] Jugador %d: %s\n", index + 1, server.game.chatLog[0].text);
+            fflush(stdout);
+        }
 
         buildSnapshot(&snapshot, &server.game);
 
