@@ -9,17 +9,19 @@
 #define KICK_CHANNEL 1
 #define AMBIENT_CHANNEL 2
 
-/* el ambiental suena cada tanto, en un rango random de 25 a 60 segundos */
-#define AMBIENT_MIN_MS 25000
-#define AMBIENT_MAX_MS 60000
+/* el ambiental suena bien de vez en cuando, cada 2 a 5 minutos */
+#define AMBIENT_MIN_MS 120000
+#define AMBIENT_MAX_MS 300000
 
-/* musica de fondo un poco mas baja que los efectos (0-128) */
-#define MAIN_THEME_VOLUME 80
+/* musica (menu/in-game) y ambiental mas bajitas que los efectos (0-128) */
+#define MUSIC_VOLUME 80
+#define AMBIENT_VOLUME 35
 
 static Mix_Chunk *goalSound = NULL;
 static Mix_Chunk *kickSound = NULL;
 static Mix_Chunk *ambientSound = NULL;
 static Mix_Music *mainTheme = NULL;
+static Mix_Music *ingameAmbience = NULL;
 
 /* -1 = todavia no sincronizado con el primer snapshot recibido */
 static int lastGoalCount = -1;
@@ -57,15 +59,21 @@ void initAudio(void)
     goalSound = loadSound("assets/audio/gol1.mp3");
     kickSound = loadSound("assets/audio/kicking_sound.wav");
     ambientSound = loadSound("assets/audio/random1.mp3");
+    if (ambientSound != NULL)
+        Mix_VolumeChunk(ambientSound, AMBIENT_VOLUME);
 
     mainTheme = Mix_LoadMUS("assets/audio/main-theme.mp3");
     if (mainTheme == NULL)
         printf("No se pudo cargar assets/audio/main-theme.mp3: %s\n", Mix_GetError());
     else
     {
-        Mix_VolumeMusic(MAIN_THEME_VOLUME);
+        Mix_VolumeMusic(MUSIC_VOLUME);
         Mix_PlayMusic(mainTheme, -1); /* -1 = bucle infinito */
     }
+
+    ingameAmbience = Mix_LoadMUS("assets/audio/ambience-ingame.mp3");
+    if (ingameAmbience == NULL)
+        printf("No se pudo cargar assets/audio/ambience-ingame.mp3: %s\n", Mix_GetError());
 
     lastGoalCount = -1;
     lastKickCount = -1;
@@ -83,16 +91,18 @@ void freeAudio(void)
         Mix_FreeChunk(kickSound);
     if (ambientSound != NULL)
         Mix_FreeChunk(ambientSound);
-    if (mainTheme != NULL)
-    {
+    if (mainTheme != NULL || ingameAmbience != NULL)
         Mix_HaltMusic();
+    if (mainTheme != NULL)
         Mix_FreeMusic(mainTheme);
-    }
+    if (ingameAmbience != NULL)
+        Mix_FreeMusic(ingameAmbience);
 
     goalSound = NULL;
     kickSound = NULL;
     ambientSound = NULL;
     mainTheme = NULL;
+    ingameAmbience = NULL;
 
     Mix_CloseAudio();
     Mix_Quit();
@@ -103,6 +113,15 @@ void audioStopMainTheme(void)
 {
     if (mainTheme != NULL)
         Mix_HaltMusic();
+}
+
+void audioStartIngameAmbience(void)
+{
+    if (ingameAmbience == NULL)
+        return;
+
+    Mix_VolumeMusic(MUSIC_VOLUME);
+    Mix_PlayMusic(ingameAmbience, -1); /* -1 = bucle infinito */
 }
 
 void audioUpdate(int goalCount, int kickCount)

@@ -9,9 +9,12 @@
 void initAudio(void);
 void freeAudio(void);
 
-/* Detiene main-theme. Llamar al salir del menu y entrar a la partida (ahi
- * adentro va otro audio, este es solo del menu). */
+/* Detiene main-theme. Llamar al salir del menu y entrar a la partida. */
 void audioStopMainTheme(void);
+
+/* Arranca ambience-ingame en bucle infinito (musica/ambiente de cuando ya
+ * se esta jugando). Llamar justo despues de audioStopMainTheme(). */
+void audioStartIngameAmbience(void);
 
 /* Llamar una vez por frame con los contadores actuales (goalCount y
  * ball.kickCount de GameState). Si cambiaron desde el frame anterior, suena

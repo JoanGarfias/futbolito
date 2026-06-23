@@ -114,6 +114,7 @@ int main(int argc, char *argv[])
     }
 
     audioStopMainTheme(); /* se sale del menu, ya no toca musica de menu */
+    audioStartIngameAmbience(); /* ahora toca el ambiente de la partida */
 
     loadSprites(renderer);
 
