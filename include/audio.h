@@ -4,9 +4,14 @@
 /* Sonidos del juego con SDL2_mixer. Si el dispositivo de audio no abre o
  * algun archivo no carga, el juego sigue sin sonido (no es fatal). */
 
-/* Llamar una vez, despues de SDL_Init. */
+/* Llamar una vez, despues de SDL_Init. Tambien arranca main-theme en bucle
+ * infinito (musica del menu, suena mientras todavia no se entra a jugar). */
 void initAudio(void);
 void freeAudio(void);
+
+/* Detiene main-theme. Llamar al salir del menu y entrar a la partida (ahi
+ * adentro va otro audio, este es solo del menu). */
+void audioStopMainTheme(void);
 
 /* Llamar una vez por frame con los contadores actuales (goalCount y
  * ball.kickCount de GameState). Si cambiaron desde el frame anterior, suena

@@ -13,9 +13,13 @@
 #define AMBIENT_MIN_MS 25000
 #define AMBIENT_MAX_MS 60000
 
+/* musica de fondo un poco mas baja que los efectos (0-128) */
+#define MAIN_THEME_VOLUME 80
+
 static Mix_Chunk *goalSound = NULL;
 static Mix_Chunk *kickSound = NULL;
 static Mix_Chunk *ambientSound = NULL;
+static Mix_Music *mainTheme = NULL;
 
 /* -1 = todavia no sincronizado con el primer snapshot recibido */
 static int lastGoalCount = -1;
@@ -54,6 +58,15 @@ void initAudio(void)
     kickSound = loadSound("assets/audio/kicking_sound.wav");
     ambientSound = loadSound("assets/audio/random1.mp3");
 
+    mainTheme = Mix_LoadMUS("assets/audio/main-theme.mp3");
+    if (mainTheme == NULL)
+        printf("No se pudo cargar assets/audio/main-theme.mp3: %s\n", Mix_GetError());
+    else
+    {
+        Mix_VolumeMusic(MAIN_THEME_VOLUME);
+        Mix_PlayMusic(mainTheme, -1); /* -1 = bucle infinito */
+    }
+
     lastGoalCount = -1;
     lastKickCount = -1;
     nextAmbientAt = SDL_GetTicks() + randomAmbientDelay();
@@ -70,14 +83,26 @@ void freeAudio(void)
         Mix_FreeChunk(kickSound);
     if (ambientSound != NULL)
         Mix_FreeChunk(ambientSound);
+    if (mainTheme != NULL)
+    {
+        Mix_HaltMusic();
+        Mix_FreeMusic(mainTheme);
+    }
 
     goalSound = NULL;
     kickSound = NULL;
     ambientSound = NULL;
+    mainTheme = NULL;
 
     Mix_CloseAudio();
     Mix_Quit();
     audioReady = 0;
+}
+
+void audioStopMainTheme(void)
+{
+    if (mainTheme != NULL)
+        Mix_HaltMusic();
 }
 
 void audioUpdate(int goalCount, int kickCount)

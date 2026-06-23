@@ -90,6 +90,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    initAudio(); /* arranca main-theme en bucle, musica del menu */
+
     /* Si no se paso ningun argumento, mostramos el menu de inicio para
      * elegir crear partida / unirse / salir, en vez de obligar a usar la
      * terminal. */
@@ -99,6 +101,7 @@ int main(int argc, char *argv[])
 
         if (action == MENU_ACTION_QUIT)
         {
+            freeAudio();
             TTF_CloseFont(font);
             SDL_DestroyRenderer(renderer);
             SDL_DestroyWindow(window);
@@ -110,8 +113,9 @@ int main(int argc, char *argv[])
         isSessionHost = (action == MENU_ACTION_HOST);
     }
 
+    audioStopMainTheme(); /* se sale del menu, ya no toca musica de menu */
+
     loadSprites(renderer);
-    initAudio();
 
     GameState game;
     initGame(&game);
@@ -121,6 +125,8 @@ int main(int argc, char *argv[])
     if (net == NULL)
     {
         printf("No se pudo iniciar la red. Saliendo.\n");
+        freeSprites();
+        freeAudio();
         TTF_CloseFont(font);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);

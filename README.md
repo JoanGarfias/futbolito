@@ -36,7 +36,17 @@ assets/    fuentes y sprites del juego
 
 ### Windows (usando MSYS2 / MinGW)
 
-Abre la terminal (nosotros usamos la ucrt64 de MSYS2) en la carpeta del proyecto y corre:
+Necesitas tener instaladas las librerías de SDL2 correspondientes (SDL2, SDL2_ttf, SDL2_image y SDL2_mixer) antes de compilar. Abre la terminal **MSYS2 UCRT64** (no PowerShell ni cmd normal, tiene que ser esa) y corre:
+
+```bash
+pacman -S \
+mingw-w64-ucrt-x86_64-SDL2 \
+mingw-w64-ucrt-x86_64-SDL2_ttf \
+mingw-w64-ucrt-x86_64-SDL2_image \
+mingw-w64-ucrt-x86_64-SDL2_mixer
+```
+
+Ya con eso instalado, en esa misma terminal, en la carpeta del proyecto, corre:
 
 ```bash
 mingw32-make
@@ -46,12 +56,6 @@ Esto te va a generar dos ejecutables en la carpeta `build/`:
 
 - `build/futbolito.exe` (el juego / cliente)
 - `build/futbolito_server.exe` (servidor dedicado para pruebas rápidas)
-
-_Nota:_ Necesitas tener instalado SDL2, SDL2_ttf y SDL2_image. En MSYS2 los instalas rápido con:
-
-```bash
-pacman -S mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_ttf mingw-w64-ucrt-x86_64-SDL2_image mingw-w64-ucrt-x86_64-SDL2_mixer
-```
 
 Si tus librerías de SDL están en otra ruta, dale una editada al `Makefile` en la variable `SDLFLAGS`.
 
