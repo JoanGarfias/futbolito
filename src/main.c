@@ -2,6 +2,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "../include/game.h"
 #include "../include/input.h"
@@ -17,25 +18,24 @@ int main(int argc, char *argv[])
 {
     /*
      * Uso:
-     *   futbolito <id>                        -> cliente local (127.0.0.1)
-     *   futbolito <id> <ipServidor>           -> cliente puro a un servidor fijo
-     *   futbolito <id> <ip1> <ip2> <ip3> <ip4> -> modo punto a punto (4 equipos
-     *                                             con migracion de host)
+     *   futbolito --host        -> crea la sesion: arranca el servidor
+     *                              embebido y se conecta a si mismo (id 1).
+     *   futbolito <ip_del_host> -> se conecta a esa IP; el servidor le asigna
+     *                              el primer id libre (2, 3, 4...).
+     *   futbolito                -> equivale a "futbolito 127.0.0.1" (solo
+     *                              cliente, util con futbolito_server aparte).
+     * No hace falta pasar el numero de jugador ni la lista de las 4 IPs: el
+     * servidor las asigna automaticamente (ver include/network.h).
      */
-    int localPlayerId = 1;
-    const char *peers[4] = {"127.0.0.1", "127.0.0.1", "127.0.0.1", "127.0.0.1"};
-    int peerCount = 1;
+    const char *hostIp = "127.0.0.1";
+    int isSessionHost = 0;
 
-    if (argc >= 2)
-        localPlayerId = atoi(argv[1]);
-
-    if (argc >= 3)
+    for (int i = 1; i < argc; i++)
     {
-        peerCount = argc - 2;
-        if (peerCount > 4)
-            peerCount = 4;
-        for (int i = 0; i < peerCount; i++)
-            peers[i] = argv[2 + i];
+        if (strcmp(argv[i], "--host") == 0)
+            isSessionHost = 1;
+        else
+            hostIp = argv[i];
     }
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -95,8 +95,9 @@ int main(int argc, char *argv[])
     GameState game;
     initGame(&game);
 
-    /* Conexion persistente + hilo receptor. */
-    NetClient *net = netConnect(peers, peerCount, localPlayerId, &game);
+    /* Conexion persistente + hilo receptor. El id de jugador lo asigna el
+     * servidor en el handshake, no se pasa por linea de comandos. */
+    NetClient *net = netConnect(hostIp, isSessionHost, &game);
 
     if (net == NULL)
     {
@@ -108,6 +109,8 @@ int main(int argc, char *argv[])
         SDL_Quit();
         return 1;
     }
+
+    int localPlayerId = netGetMyId(net);
 
     SDL_Event event;
     Uint32 lastSend = 0;
@@ -124,7 +127,10 @@ int main(int argc, char *argv[])
         }
 
         /* Input: escribe la posicion del jugador local dentro de la
-         * seccion critica (el hilo receptor toca el mismo GameState). */
+         * seccion critica (el hilo receptor toca el mismo GameState). Sigue
+         * funcionando aunque estemos reconectando: solo el envio al
+         * servidor se pausa (netSendLocalPlayer no manda nada si no estamos
+         * CONNECTED). */
         netLockState(net);
         handleInput(&game, localPlayerId);
         netUnlockState(net);
@@ -141,20 +147,20 @@ int main(int argc, char *argv[])
         renderGame(renderer, font, &game);
         netUnlockState(net);
 
-        if (!netIsConnected(net))
+        /* Migracion de host: no bloquea el bucle SDL. Si se pierde la
+         * conexion, se lanza un hilo en segundo plano que reconecta solo;
+         * mientras tanto se sigue dibujando (con un overlay) y respondiendo
+         * a eventos (ESC sigue funcionando). */
+        if (!netIsConnected(net) && netGetState(net) != NET_STATE_RECONNECTING)
+            netBeginReconnect(net);
+
+        if (netGetState(net) == NET_STATE_RECONNECTING)
         {
-            printf("[CLIENTE] Conexion perdida. Intentando migrar de host...\n");
-            if (!netReconnect(net))
-            {
-                printf("[CLIENTE] No hay ningun host disponible. Saliendo.\n");
-                game.running = 0;
-            }
-            else
-            {
-                printf("[CLIENTE] Reconectado. Host actual: jugador %d\n",
-                       netCurrentHost(net));
-            }
+            netPollReconnect(net);
+            renderReconnectOverlay(renderer, font);
         }
+
+        SDL_RenderPresent(renderer);
 
         SDL_Delay(16);
     }

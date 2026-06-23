@@ -449,6 +449,24 @@ void renderGame(SDL_Renderer *renderer, TTF_Font *font, GameState *game)
         renderText(renderer, font, "Nueva partida en unos segundos...",
                    SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 + 5, white);
     }
+}
 
-    SDL_RenderPresent(renderer);
+void renderReconnectOverlay(SDL_Renderer *renderer, TTF_Font *font)
+{
+    SDL_BlendMode prevMode;
+    SDL_GetRenderDrawBlendMode(renderer, &prevMode);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+    SDL_Rect panel = {SCREEN_WIDTH / 2 - 180, SCREEN_HEIGHT / 2 - 35, 360, 70};
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
+    SDL_RenderFillRect(renderer, &panel);
+
+    SDL_SetRenderDrawBlendMode(renderer, prevMode);
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderDrawRect(renderer, &panel);
+
+    SDL_Color white = {255, 255, 255, 255};
+    renderText(renderer, font, "Reconectando...",
+               SCREEN_WIDTH / 2 - 80, SCREEN_HEIGHT / 2 - 12, white);
 }
