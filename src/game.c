@@ -15,6 +15,7 @@ void initGame(GameState *game)
 {
     game->running = 1;
     game->winner = -1;
+    game->goalCount = 0;
 
     for (int i = 0; i < MAX_PLAYERS; i++)
     {

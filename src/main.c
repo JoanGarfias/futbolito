@@ -9,6 +9,7 @@
 #include "../include/render.h"
 #include "../include/network.h"
 #include "../include/menu.h"
+#include "../include/audio.h"
 
 #define SCREEN_WIDTH 1000
 #define SCREEN_HEIGHT 600
@@ -37,7 +38,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0)
     {
         printf("Error al iniciar SDL: %s\n", SDL_GetError());
         return 1;
@@ -110,6 +111,7 @@ int main(int argc, char *argv[])
     }
 
     loadSprites(renderer);
+    initAudio();
 
     GameState game;
     initGame(&game);
@@ -194,7 +196,11 @@ int main(int argc, char *argv[])
         /* Render: lee el estado dentro de la seccion critica. */
         netLockState(net);
         renderGame(renderer, font, &game);
+        int goalCount = game.goalCount;
+        int kickCount = game.ball.kickCount;
         netUnlockState(net);
+
+        audioUpdate(goalCount, kickCount);
 
         /* si se cae la conexion, esto lanza la migracion en segundo plano
          * sin trabar la ventana */
@@ -218,6 +224,7 @@ int main(int argc, char *argv[])
     netDisconnect(net);
 
     freeSprites();
+    freeAudio();
     TTF_CloseFont(font);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

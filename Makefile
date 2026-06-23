@@ -2,7 +2,7 @@ CC = gcc
 
 CFLAGS = -Wall -Wextra
 
-SDLFLAGS = -IC:/msys64/ucrt64/include/SDL2 -LC:/msys64/ucrt64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -lSDL2_image
+SDLFLAGS = -IC:/msys64/ucrt64/include/SDL2 -LC:/msys64/ucrt64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer
 NETFLAGS = -lws2_32
 
 # Cliente: GUI con SDL + sockets nativos (Winsock) + hilos (CreateThread).
@@ -15,6 +15,7 @@ src/input.c \
 src/ball.c \
 src/render.c \
 src/menu.c \
+src/audio.c \
 src/network.c \
 src/server.c \
 src/physics.c

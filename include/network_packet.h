@@ -59,6 +59,7 @@ typedef struct
     float vy;
     int size;
     int lastPlayerTouched;
+    int kickCount;
 } BallPacket;
 
 typedef struct
@@ -76,6 +77,7 @@ typedef struct
     BallPacket ball;
     int score[MAX_PACKET_PLAYERS];
     int winner; /* -1 = nadie ha ganado */
+    int goalCount;
     ChatPacket chat[CHAT_HISTORY]; /* mas nuevo primero */
     SessionRoster roster;
 } GamePacket;

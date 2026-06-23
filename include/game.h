@@ -21,6 +21,7 @@ typedef struct
     int running;
     int score[MAX_PLAYERS];
     int winner; /* -1 si nadie ha ganado todavia */
+    int goalCount; /* sube con cada gol (para el sonido), nunca se reinicia */
 
     Player players[MAX_PLAYERS];
     Ball ball;

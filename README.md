@@ -50,7 +50,7 @@ Esto te va a generar dos ejecutables en la carpeta `build/`:
 _Nota:_ Necesitas tener instalado SDL2, SDL2_ttf y SDL2_image. En MSYS2 los instalas rápido con:
 
 ```bash
-pacman -S mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_ttf mingw-w64-ucrt-x86_64-SDL2_image
+pacman -S mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_ttf mingw-w64-ucrt-x86_64-SDL2_image mingw-w64-ucrt-x86_64-SDL2_mixer
 ```
 
 Si tus librerías de SDL están en otra ruta, dale una editada al `Makefile` en la variable `SDLFLAGS`.
@@ -68,7 +68,7 @@ Te va a generar los ejecutables `futbolito` y `futbolito_server` en la raíz del
 _Nota:_ Para instalar SDL2 en Ubuntu/Debian corre:
 
 ```bash
-sudo apt install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
+sudo apt install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libsdl2-mixer-dev
 ```
 
 ---

@@ -44,6 +44,8 @@ void registerGoal(GameState *game, int goalOwner)
            game->score[0], game->score[1], game->score[2], game->score[3]);
     fflush(stdout);
 
+    game->goalCount++;
+
     /* Si el goleador llego a los goles necesarios, gana la partida. */
     if (game->score[scorer] >= GOALS_TO_WIN)
     {
@@ -75,6 +77,11 @@ void updatePhysics(GameState *game)
                 player->x, player->y, player->width, player->height,
                 ball->x, ball->y, ball->size, ball->size))
         {
+            /* solo cuenta como golpe nuevo si no era este mismo jugador el
+             * que ya la traia pegada (si no, sonaria 60 veces por segundo) */
+            if (ball->lastPlayerTouched != i)
+                ball->kickCount++;
+
             ball->vx = player->dirX * KICK_POWER;
             ball->vy = player->dirY * KICK_POWER;
             ball->lastPlayerTouched = i;

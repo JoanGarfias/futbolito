@@ -171,11 +171,13 @@ static THREAD_RET receiverThread(void *arg)
         nc->game->ball.vy = state.ball.vy;
         nc->game->ball.size = state.ball.size;
         nc->game->ball.lastPlayerTouched = state.ball.lastPlayerTouched;
+        nc->game->ball.kickCount = state.ball.kickCount;
 
         for (int i = 0; i < MAX_PLAYERS; i++)
             nc->game->score[i] = state.score[i];
 
         nc->game->winner = state.winner;
+        nc->game->goalCount = state.goalCount;
 
         for (int i = 0; i < CHAT_HISTORY; i++)
         {

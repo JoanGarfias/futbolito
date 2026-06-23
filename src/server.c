@@ -69,6 +69,7 @@ static void buildSnapshot(GamePacket *out, const GameState *g)
     }
 
     out->winner = g->winner;
+    out->goalCount = g->goalCount;
 
     out->ball.x = g->ball.x;
     out->ball.y = g->ball.y;
@@ -76,6 +77,7 @@ static void buildSnapshot(GamePacket *out, const GameState *g)
     out->ball.vy = g->ball.vy;
     out->ball.size = g->ball.size;
     out->ball.lastPlayerTouched = g->ball.lastPlayerTouched;
+    out->ball.kickCount = g->ball.kickCount;
 
     for (int i = 0; i < CHAT_HISTORY; i++)
     {

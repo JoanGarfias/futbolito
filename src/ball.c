@@ -8,4 +8,5 @@ void initBall(Ball *ball, float x, float y)
     ball->vy = 0.0f;
     ball->size = 20;
     ball->lastPlayerTouched = -1;
-}   
+    ball->kickCount = 0;
+}

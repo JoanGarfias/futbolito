@@ -11,6 +11,7 @@ typedef struct
     int size;
 
     int lastPlayerTouched;
+    int kickCount; /* sube cada vez que un jugador la golpea (para el sonido) */
 
 } Ball;
 
